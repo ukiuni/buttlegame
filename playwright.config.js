@@ -6,6 +6,7 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 10_000 },
   fullyParallel: true,
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   use: { baseURL: 'http://127.0.0.1:8123', trace: 'retain-on-failure' },
   webServer: {

@@ -659,3 +659,40 @@ test('BGM: 曲を実際に音声として合成でき、無音でも音割れで
   }
   expect(lv.battle.rms).toBeGreaterThan(lv.home.rms);    // the battle theme is more energetic
 });
+
+// =============== PWA ===============
+test('PWA: マニフェストとアイコンが有効で、Service Worker によりオフラインでも起動できる', async ({ page, context, browserName }) => {
+  await page.goto('/index.html');
+  const man = await page.evaluate(async () => {
+    const href = document.querySelector('link[rel="manifest"]').href;
+    const m = await (await fetch(href)).json();
+    const icons = await Promise.all(m.icons.map(async (i) => {
+      const img = new Image(); img.src = new URL(i.src, href).href; await img.decode();
+      return { sizes: i.sizes, purpose: i.purpose, w: img.naturalWidth, h: img.naturalHeight };
+    }));
+    return { ...m, icons };
+  });
+  expect(man.name).toBeTruthy();
+  expect(man.display).toBe('standalone');
+  expect(man.start_url).toBeTruthy();
+  for (const i of man.icons) expect(`${i.w}x${i.h}`).toBe(i.sizes);
+  expect(man.icons.some((i) => i.sizes === '512x512' && i.purpose === 'maskable')).toBe(true);
+  expect(man.icons.some((i) => i.sizes === '192x192' && i.purpose === 'any')).toBe(true);
+  expect(await page.locator('link[rel="apple-touch-icon"]').count()).toBe(1);
+
+  test.skip(browserName !== 'chromium', 'offline check uses Chromium (the service worker itself is the same on every browser)');
+  // service worker installs, precaches the app and takes control
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+  await expect.poll(() => page.evaluate(async () => (await caches.keys()).some((k) => k.startsWith('pixel-brigade-')))).toBe(true);
+  // offline: the game still starts and can be played
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.locator('#screen-title')).toBeVisible();
+  await page.click('#btn-title-start');
+  await expect(page.locator('#screen-home')).toBeVisible();
+  await page.click('#btn-home-start');
+  await expect(page.locator('#prep-panel')).toBeVisible();
+  await context.setOffline(false);
+});

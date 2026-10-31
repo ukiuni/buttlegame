@@ -41,6 +41,11 @@ npm start            # python3 -m http.server 8080
   - タイトル・ホーム・バトル画面上部のスピーカーボタンでオン/オフ（設定は保存）。スマホのブラウザは最初のタップで音が出るようになる。アプリ切替・画面ロック中は停止
 - 言語：日本語 / English / 中文 / 한국어
 
+## PWA・公開
+- PWA 対応：ホーム画面に追加するとアプリとして全画面で起動（`manifest.json`、アイコンは `icons/`）。`sw.js`（Service Worker）が初回アクセス時にゲーム一式をキャッシュし、オフラインでも遊べる。オンライン時は常に最新版を取得
+- GitHub Pages への自動公開：`main` ブランチに push すると GitHub Actions（`.github/workflows/pages.yml`）がテスト（単体＋Playwright）を実行し、成功したらゲームのファイルだけを GitHub Pages に公開。公開のたびに Service Worker のバージョンがコミットに合わせて更新される
+- 初回のみ、GitHub のリポジトリ設定 Settings → Pages → Build and deployment の Source を「GitHub Actions」にする
+
 ## 構成
 - `js/data.js` ステータス・装備・敵編成・報酬
 - `js/battle.js` 戦闘シミュレーション（DOM非依存）
@@ -49,6 +54,7 @@ npm start            # python3 -m http.server 8080
 - `js/store.js` セーブデータ（localStorage）
 - `js/i18n.js` 多言語
 - `js/main.js` 画面・入力・描画
+- `sw.js` Service Worker（オフライン対応）／`manifest.json`・`icons/` PWA 設定
 
 ## テスト
 ```

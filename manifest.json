@@ -1,10 +1,20 @@
 {
+  "id": "./",
   "name": "Pixel Brigade",
   "short_name": "Pixel Brigade",
+  "description": "ドット絵の仲間を配置して戦うオートバトルゲーム",
+  "lang": "ja",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#151028",
   "theme_color": "#151028",
-  "icons": []
+  "categories": ["games"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }

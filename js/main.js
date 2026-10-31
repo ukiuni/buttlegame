@@ -817,3 +817,8 @@ window.__game = {
 };
 
 init();
+
+// PWA: register the service worker (installable, works offline). Needs https or localhost.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
+}
