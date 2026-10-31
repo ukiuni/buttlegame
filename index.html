@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#151028">
+  <title>Pixel Brigade</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Title -->
+    <section id="screen-title" class="screen active" data-testid="screen-title">
+      <div class="title-sprites" id="title-sprites"></div>
+      <h1 class="logo" data-i18n="game.title"></h1>
+      <p class="subtitle" data-i18n="game.subtitle"></p>
+      <button id="btn-title-start" class="btn big blink" data-i18n="title.tap"></button>
+      <div class="lang-row"><span data-i18n="common.language"></span> <select class="lang-select" data-testid="lang-select"></select></div>
+    </section>
+
+    <!-- Home -->
+    <section id="screen-home" class="screen" data-testid="screen-home">
+      <header class="topbar">
+        <span class="stage-label" id="home-stage"></span>
+        <span class="coins" data-testid="coins"><img class="px-icon" data-icon="coin" alt=""><b id="home-coins">0</b></span>
+      </header>
+      <div class="home-body">
+        <button id="btn-home-start" class="btn big primary" data-i18n="home.start"></button>
+        <div class="home-actions">
+          <button id="btn-home-shop" class="btn" data-i18n="home.shop"></button>
+          <select class="lang-select" data-testid="lang-select-home"></select>
+        </div>
+        <h2 id="roster-title"></h2>
+        <p class="hint" data-i18n="home.tapHint"></p>
+        <div id="roster" class="roster" data-testid="roster"></div>
+        <h2 data-i18n="home.inventory"></h2>
+        <div id="inventory" class="inventory" data-testid="inventory"></div>
+        <button id="btn-reset" class="btn small danger" data-i18n="home.reset"></button>
+      </div>
+    </section>
+
+    <!-- Battle (formation + combat) -->
+    <section id="screen-battle" class="screen" data-testid="screen-battle">
+      <header class="topbar">
+        <button id="btn-battle-home" class="btn small" data-i18n="prep.home"></button>
+        <span class="stage-label" id="battle-stage"></span>
+        <span class="coins"><img class="px-icon" data-icon="coin" alt=""><b id="battle-coins">0</b></span>
+      </header>
+      <div class="battle-info">
+        <span id="info-left"></span>
+        <span id="info-right"></span>
+      </div>
+      <div id="field-wrap">
+        <div id="field" data-testid="field">
+          <div id="cells"></div>
+          <div id="units"></div>
+          <div id="fx"></div>
+        </div>
+      </div>
+      <div id="prep-panel">
+        <p class="hint" data-i18n="prep.hint"></p>
+        <div id="bench" class="bench" data-testid="bench"><span class="bench-label" data-i18n="prep.bench"></span><div id="bench-list" class="bench-list"></div></div>
+        <button id="btn-fight" class="btn big primary" data-i18n="prep.start"></button>
+      </div>
+      <div id="battle-panel" class="hidden">
+        <button id="btn-speed" class="btn"></button>
+      </div>
+    </section>
+
+    <!-- Result overlay -->
+    <div id="overlay-result" class="overlay hidden" data-testid="result">
+      <div class="result-box">
+        <h2 id="result-title"></h2>
+        <p id="result-coins" class="result-coins"></p>
+        <div class="result-buttons">
+          <button id="btn-next" class="btn big primary" data-i18n="result.next"></button>
+          <button id="btn-retry" class="btn big primary" data-i18n="result.retry"></button>
+          <button id="btn-result-home" class="btn big" data-i18n="result.home"></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="overlay hidden">
+      <div class="modal-box">
+        <div id="modal-content"></div>
+        <button id="btn-modal-close" class="btn" data-i18n="common.close"></button>
+      </div>
+    </div>
+    <div id="toast" class="toast hidden"></div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

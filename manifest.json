@@ -1,0 +1,10 @@
+{
+  "name": "Pixel Brigade",
+  "short_name": "Pixel Brigade",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#151028",
+  "theme_color": "#151028",
+  "icons": []
+}
