@@ -1,5 +1,5 @@
 // Persistent player state.
-import { ITEMS, RECRUIT_COST, MAX_RANK, mergedRank, deployLimit, rewardCoins } from './data.js';
+import { ITEMS, RECRUIT_COST, MAX_RANK, mergedRank, rewardCoins } from './data.js';
 
 const KEY = 'pixel_brigade_save_v1';
 
@@ -80,15 +80,13 @@ export class Store {
 
   // ---- formation ----
   placedCount() { return Object.keys(this.data.formation).length; }
-  limit() { return deployLimit(this.data.stage); }
   cellOf(charId) { const v = this.data.formation[charId]; return v == null ? null : v; }
   charAt(cell) {
     const e = Object.entries(this.data.formation).find(([, c]) => c === cell);
     return e ? this.char(+e[0]) : null;
   }
+  // No deployment limit: every ally cell can be filled.
   place(charId, cell) {
-    const fromBench = this.cellOf(charId) == null;
-    if (fromBench && this.placedCount() >= this.limit()) return 'limit';
     this.data.formation[charId] = cell; this.save(); return 'ok';
   }
   unplace(charId) { delete this.data.formation[charId]; this.save(); }

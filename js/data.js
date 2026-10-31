@@ -53,8 +53,6 @@ export function computeStats(type, rank = 1, equip = {}, mult = 1) {
   return s;
 }
 
-export function deployLimit(stage) { return Math.min(15, 4 + Math.floor((stage - 1) / 2)); }
-
 export function rewardCoins(stage, win) { return win ? 40 + stage * 15 : 5 + stage * 2; }
 
 export function mergedRank(a, b) { return Math.min(MAX_RANK, Math.max(a, b) + 1); }
@@ -71,17 +69,30 @@ export function mulberry32(seed) {
   };
 }
 
-// Enemy formation for a stage. cell = row*COLS+col in enemy zone (row 2 is the front line).
-export function enemyWave(stage) {
-  // Fixed unit sequence + per-unit rank rolls => strictly stronger waves as the stage rises.
+// Enemy difficulty curve: total enemy power grows smoothly by ~6-9% per stage,
+// so there are no sudden spikes. Designed for 100 stages: stage 100 needs a full
+// ★10 army with good equipment. After that it keeps growing slowly as an endless challenge.
+export const STAGE_COUNT = 100;
+const GROWTH = 1.055;
+const GROWTH_AFTER = 1.02;
+export function targetPowerScale(stage) {
+  let ln = 0;
+  for (let s = 1; s < stage; s++) ln += Math.log(stageGrowth(s));
+  return Math.exp(ln);
+}
+// Per-stage growth: ~+9% early, easing to ~+6% toward stage 100, then +2% (endless).
+function stageGrowth(s) {
+  if (s >= STAGE_COUNT) return GROWTH_AFTER;
+  return GROWTH + 0.035 * Math.exp(-(s - 1) / 40);
+}
+
+function enemyComposition(stage) {
+  // Fixed unit sequence (seeded) so a stage always has the same monsters.
   const rnd = mulberry32(24);
-  const count = Math.min(15, 3 + Math.floor((stage - 1) * 0.6));
-  const baseRank = Math.min(MAX_RANK, 1 + Math.floor((stage - 1) / 5));
-  const mult = 0.8 + 0.05 * (stage - 1);
-  const bonusChance = Math.min(0.9, 0.05 + stage * 0.02);
-  const front = [], back = [];
+  const count = Math.min(15, 3 + Math.floor((stage - 1) / 8));      // +1 monster every 8 stages
+  const list = [];
   for (let i = 0; i < count; i++) {
-    const r = rnd(), roll = rnd();
+    const r = rnd();
     let type;
     if (i === 0) type = 'sword';
     else if (r < 0.28) type = 'sword';
@@ -89,9 +100,35 @@ export function enemyWave(stage) {
     else if (r < 0.64) type = 'mage';
     else if (r < 0.82) type = 'shield';
     else type = 'healer';
-    const rank = Math.min(MAX_RANK, baseRank + (roll < bonusChance ? 1 : 0));
-    (type === 'sword' || type === 'shield' ? front : back).push({ type, rank });
+    // Ranks rise one monster at a time (staggered), reaching ★10 around stage 100.
+    const offset = (i * 7) % 11;
+    const rank = Math.max(1, Math.min(MAX_RANK, 1 + Math.floor((stage - 4 + offset) / 11)));
+    list.push({ type, rank });
   }
+  return list;
+}
+
+// Rough fighting strength: total HP x total damage per second.
+export function wavePower(units, mult) {
+  let hp = 0, dps = 0;
+  for (const u of units) {
+    const x = computeStats(u.type, u.rank, {}, mult);
+    hp += x.maxHp; dps += x.atk / x.interval;
+  }
+  return hp * dps;
+}
+
+const BASE_POWER = wavePower(enemyComposition(1), 0.8);
+
+// Enemy formation for a stage. cell = row*COLS+col in enemy zone (row 2 is the front line).
+export function enemyWave(stage) {
+  const list = enemyComposition(stage);
+  // Stat multiplier is solved so that power follows the smooth target curve exactly
+  // (HP and ATK both scale with mult, so power ~ mult^2).
+  const target = BASE_POWER * targetPowerScale(stage);
+  const mult = +Math.sqrt(target / wavePower(list, 1)).toFixed(3);
+  const front = [], back = [];
+  for (const u of list) (u.type === 'sword' || u.type === 'shield' ? front : back).push(u);
   const free = new Set(Array.from({ length: 15 }, (_, i) => i));
   const order = (rows) => {
     const cells = [];

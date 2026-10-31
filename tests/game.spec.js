@@ -93,7 +93,7 @@ test('ホーム画面からゲームスタートできる', async ({ page }) => 
 
 // =============== Placement / merge ===============
 test('ゲームをスタートすると各種キャラクタを配置できる（タップ・ドラッグ）', async ({ page }) => {
-  await gotoPrep(page, { stage: 3 }); // stage 3 => deploy limit 5
+  await gotoPrep(page);
   // return everything to the bench
   for (let i = 0; i < 4; i++) {
     await placed(page).first().click();
@@ -120,12 +120,13 @@ test('ゲームをスタートすると各種キャラクタを配置できる�
   await page.mouse.up();
   await expect(placed(page, '[data-type="healer"][data-cell="12"]')).toHaveCount(1);
   for (const type of TYPES) await expect(placed(page, `[data-type="${type}"]`)).toHaveCount(1);
-  await expect(page.locator('#info-left')).toHaveText(JA['prep.deploy'].replace('{n}', '5').replace('{max}', '5'));
-  // deployment limit is enforced
+  // no deployment limit and no limit display: the 6th unit can be placed too
+  await expect(page.locator('#info-left')).toHaveText('');
   await bench(page, '[data-type="sword"]').first().click();
   await tapCell(page, 14);
-  await expect(page.locator('#toast')).toHaveText(JA['prep.limit']);
-  await expect(placed(page)).toHaveCount(5);
+  await expect(placed(page)).toHaveCount(6);
+  await expect(placed(page, '[data-type="sword"][data-cell="14"]')).toHaveCount(1);
+  await expect(bench(page)).toHaveCount(0);
   // moving a placed unit to an empty cell
   await placed(page, '[data-type="archer"]').click();
   await tapCell(page, 7);
@@ -333,7 +334,7 @@ test('敵が全滅するとゲーム終了し、勝利画面がオーバーレ�
 });
 
 test('味方が全滅するとゲーム終了し、敗北画面がオーバーレイ → リトライできる', async ({ page }) => {
-  await gotoPrep(page, { stage: 30 });
+  await gotoPrep(page, { stage: 60 });
   await startBattle(page, { speed: 8 });
   await waitResult(page);
   const st = await page.evaluate(() => ({ winner: __game.battle.winner, allies: __game.battle.units.filter((u) => u.team === 'ally').length,
@@ -348,7 +349,7 @@ test('味方が全滅するとゲーム終了し、敗北画面がオーバー�
   await page.click('#btn-retry');
   await expect(page.locator('#overlay-result')).toBeHidden();
   await expect(page.locator('#prep-panel')).toBeVisible();
-  await expect(page.locator('#battle-stage')).toHaveText(JA['common.stage'].replace('{n}', '30'));
+  await expect(page.locator('#battle-stage')).toHaveText(JA['common.stage'].replace('{n}', '60'));
   // retry actually restarts the battle
   await startBattle(page, { speed: 8 });
   await waitResult(page);
@@ -363,7 +364,7 @@ test('勝利画面・敗北画面からホーム画面に移動できる', async
   await expect(page.locator('#screen-home')).toBeVisible();
   await expect(page.locator('#overlay-result')).toBeHidden();
 
-  await page.evaluate(() => __game.setStage(30));
+  await page.evaluate(() => __game.setStage(60));
   await page.click('#btn-home-start');
   await startBattle(page, { speed: 8 });
   await waitResult(page);

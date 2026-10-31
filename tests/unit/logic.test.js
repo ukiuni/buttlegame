@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Battle, makeUnit, DYING_TIME } from '../../js/battle.js';
-import { enemyWave, rewardCoins, mergedRank, MAX_RANK, computeStats } from '../../js/data.js';
+import { enemyWave, rewardCoins, mergedRank, MAX_RANK, computeStats, wavePower, COLS, ZONE_ROWS } from '../../js/data.js';
 import { Store } from '../../js/store.js';
 
 const mem = () => { const m = {}; return { getItem: (k) => m[k] ?? null, setItem: (k, v) => { m[k] = v; } }; };
@@ -39,8 +39,24 @@ test('merge rules', () => {
   assert.equal(mergedRank(9, 9), MAX_RANK); assert.equal(mergedRank(10, 1), MAX_RANK);
 });
 
-test('rewards and stage scaling', () => {
+test('win rewards exceed lose rewards', () => {
   for (let st = 1; st < 50; st++) assert.ok(rewardCoins(st, true) > rewardCoins(st, false));
-  const pow = (st) => { const w = enemyWave(st); return w.units.reduce((a, u) => { const x = computeStats(u.type, u.rank, {}, w.mult); return a + x.maxHp * x.atk; }, 0); };
-  for (let st = 1; st < 40; st++) assert.ok(pow(st + 1) >= pow(st));
+});
+
+test('enemy strength grows smoothly (no sudden spikes) over 100+ stages', () => {
+  const pw = (st) => { const w = enemyWave(st); return wavePower(w.units, w.mult); };
+  for (let st = 1; st < 150; st++) {
+    const r = pw(st + 1) / pw(st);
+    assert.ok(r >= 1 && r <= 1.15, `stage ${st}->${st + 1} ratio ${r.toFixed(3)}`);
+  }
+  assert.ok(pw(100) / pw(1) > 300, 'stage 100 is much stronger than stage 1');
+});
+
+test('every ally cell can be filled (no deployment limit)', () => {
+  const s = new Store(mem());
+  for (let i = 0; i < 20; i++) { s.data.coins = 1000; s.recruit('sword'); }
+  s.data.formation = {};
+  const ids = s.data.roster.map((c) => c.id);
+  for (let cell = 0; cell < COLS * ZONE_ROWS; cell++) assert.equal(s.place(ids[cell], cell), 'ok');
+  assert.equal(s.placedCount(), COLS * ZONE_ROWS);
 });

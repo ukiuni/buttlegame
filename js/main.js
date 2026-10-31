@@ -295,8 +295,7 @@ function renderPrep() {
     const rk = el('span', 'rank-badge'); rk.textContent = `★${c.rank}`; card.appendChild(rk);
     list.appendChild(card);
   }
-  $('#info-left').textContent = t('prep.deploy', { n: store.placedCount(), max: store.limit() });
-  $('#info-left').dataset.testid = 'deploy-count';
+  $('#info-left').textContent = '';
   $('#info-right').textContent = t('battle.enemies', { n: wave.units.length });
   $('#btn-fight').disabled = store.placedCount() === 0;
 }
@@ -311,7 +310,7 @@ function dropOnCell(charId, cell) {
   const c = store.char(charId); if (!c) return;
   const occ = store.charAt(cell);
   if (!occ) {
-    if (store.place(charId, cell) === 'limit') toast(t('prep.limit'));
+    store.place(charId, cell);
   } else if (occ.id === charId) {
     // nothing
   } else if (occ.type === c.type) {
