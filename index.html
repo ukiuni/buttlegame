@@ -19,13 +19,15 @@
       <h1 class="logo" data-i18n="game.title"></h1>
       <p class="subtitle" data-i18n="game.subtitle"></p>
       <button id="btn-title-start" class="btn big blink" data-i18n="title.tap"></button>
-      <div class="lang-row"><span data-i18n="common.language"></span> <select class="lang-select" data-testid="lang-select"></select></div>
+      <div class="lang-row"><span data-i18n="common.language"></span> <select class="lang-select" data-testid="lang-select"></select>
+        <button class="btn small btn-sound" data-testid="btn-sound-title"><img class="px-icon" alt=""></button></div>
     </section>
 
     <!-- Home -->
     <section id="screen-home" class="screen" data-testid="screen-home">
       <header class="topbar">
         <span class="stage-label" id="home-stage"></span>
+        <button class="btn small btn-sound" data-testid="btn-sound"><img class="px-icon" alt=""></button>
         <span class="coins" data-testid="coins"><img class="px-icon" data-icon="coin" alt=""><b id="home-coins">0</b></span>
       </header>
       <div class="home-body">
@@ -48,6 +50,7 @@
       <header class="topbar">
         <button id="btn-battle-home" class="btn small" data-i18n="prep.home"></button>
         <span class="stage-label" id="battle-stage"></span>
+        <button class="btn small btn-sound" data-testid="btn-sound-battle"><img class="px-icon" alt=""></button>
         <span class="coins"><img class="px-icon" data-icon="coin" alt=""><b id="battle-coins">0</b></span>
       </header>
       <div class="battle-info">
@@ -64,7 +67,10 @@
       <div id="prep-panel">
         <p class="hint" data-i18n="prep.hint"></p>
         <div id="bench" class="bench" data-testid="bench"><span class="bench-label" data-i18n="prep.bench"></span><div id="bench-list" class="bench-list"></div></div>
-        <button id="btn-fight" class="btn big primary" data-i18n="prep.start"></button>
+        <div class="prep-actions">
+          <button id="btn-auto" class="btn" data-i18n="auto.button" data-testid="btn-auto"></button>
+          <button id="btn-fight" class="btn big primary" data-i18n="prep.start"></button>
+        </div>
       </div>
       <div id="battle-panel" class="hidden">
         <button id="btn-speed" class="btn"></button>
@@ -92,6 +98,7 @@
       </div>
     </div>
     <div id="toast" class="toast hidden"></div>
+    <div id="undo-bar" class="undo-bar hidden" data-testid="undo-bar"><span id="undo-msg"></span><button id="btn-undo" class="btn small" data-i18n="undo.btn"></button></div>
   </div>
   <script type="module" src="js/main.js"></script>
 </body>

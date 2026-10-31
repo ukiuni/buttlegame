@@ -74,7 +74,7 @@ test('ホーム画面で保持キャラクタとコインを確認できる', as
   await expect(page.locator('#home-coins')).toHaveText('100');
   const cards = page.locator('[data-testid="roster-card"]');
   await expect(cards).toHaveCount(6);
-  for (const type of TYPES) await expect(page.locator(`.roster-card[data-type="${type}"]`).first()).toBeVisible();
+  for (const type of TYPES.slice(0, 5)) await expect(page.locator(`.roster-card[data-type="${type}"]`).first()).toBeVisible();
   await expect(page.locator('.roster-card[data-type="sword"]').first()).toContainText(JA['char.sword']);
   await expect(page.locator('#roster-title')).toHaveText(JA['home.roster'].replace('{n}', '6'));
   // sprites are generated pixel-art images
@@ -100,7 +100,9 @@ test('ゲームをスタートすると各種キャラクタを配置できる�
     await page.locator('.bench-label').click();
   }
   await expect(placed(page)).toHaveCount(0);
-  await expect(bench(page)).toHaveCount(6);
+  // the bench shows one stacked card per class (2 swordsmen -> one card ×2)
+  await expect(bench(page)).toHaveCount(5);
+  await expect(bench(page, '[data-type="sword"]')).toHaveAttribute('data-count', '2');
   // place each type by tap: select bench card -> tap cell
   const cells = [0, 1, 2, 3];
   for (const [i, type] of ['sword', 'mage', 'archer', 'shield'].entries()) {
@@ -119,7 +121,7 @@ test('ゲームをスタートすると各種キャラクタを配置できる�
   await page.mouse.move(db.x + db.width / 2, db.y + db.height / 2, { steps: 8 });
   await page.mouse.up();
   await expect(placed(page, '[data-type="healer"][data-cell="12"]')).toHaveCount(1);
-  for (const type of TYPES) await expect(placed(page, `[data-type="${type}"]`)).toHaveCount(1);
+  for (const type of TYPES.slice(0, 5)) await expect(placed(page, `[data-type="${type}"]`)).toHaveCount(1);
   // no deployment limit and no limit display: the 6th unit can be placed too
   await expect(page.locator('#info-left')).toHaveText('');
   await bench(page, '[data-type="sword"]').first().click();
@@ -147,25 +149,157 @@ test('同一のキャラクタは合体できる（ランクアップ）', async
   let roster = await page.evaluate(() => __game.store.data.roster.map((c) => `${c.type}:${c.rank}`));
   expect(roster.filter((r) => r.startsWith('sword'))).toEqual(['sword:2']);
   expect(roster).toHaveLength(5);
-  // drag merge with recruited units, up to max rank 10
-  await page.evaluate(() => { const s = __game.store; s.data.coins = 10000; for (let i = 0; i < 9; i++) s.recruit('sword'); __game.G; });
+  // bulk merge: drag the bench stack onto the placed swordsman -> choose how many to use
+  await page.evaluate(() => { const s = __game.store; s.data.coins = 10000; s.recruitMany('sword', 9); });
   await page.click('#btn-battle-home');
   await page.click('#btn-home-start');
-  for (let r = 3; r <= 10; r++) {
-    const src = bench(page, '[data-type="sword"]').first();
-    const dst = placed(page, '[data-type="sword"]');
-    const sb = await src.boundingBox(); const db = await dst.boundingBox();
+  await expect(bench(page, '[data-type="sword"]')).toHaveAttribute('data-count', '9');
+  const dragStack = async () => {
+    const sb = await bench(page, '[data-type="sword"]').boundingBox(); const db = await placed(page, '[data-type="sword"]').boundingBox();
     await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2);
     await page.mouse.down();
     await page.mouse.move(db.x + db.width / 2, db.y + db.height * 0.7, { steps: 6 });
     await page.mouse.up();
-    await expect(placed(page, '[data-type="sword"]')).toHaveAttribute('data-rank', String(r));
-  }
-  // already max (10): further merge refused
+    await expect(page.locator('[data-testid="bulk-merge"]')).toBeVisible();
+  };
+  await dragStack();
+  await expect(page.locator('[data-testid="bulk-count"]')).toHaveText('9');           // defaults to max
+  await expect(page.locator('[data-testid="bulk-preview"]')).toContainText('★2 → ★11');
+  await page.click('[data-bulk="minus"]'); await page.click('[data-bulk="minus"]');
+  await expect(page.locator('[data-testid="bulk-count"]')).toHaveText('7');
+  await expect(page.locator('[data-testid="bulk-preview"]')).toContainText('★2 → ★9');
+  await page.click('[data-testid="bulk-confirm"]');
+  await expect(placed(page, '[data-type="sword"]')).toHaveAttribute('data-rank', '9');
+  await expect(bench(page, '[data-type="sword"]')).toHaveAttribute('data-count', '2');
+  // undo restores everything
+  await expect(page.locator('[data-testid="undo-bar"]')).toBeVisible();
+  await page.click('#btn-undo');
+  await expect(placed(page, '[data-type="sword"]')).toHaveAttribute('data-rank', '2');
+  await expect(bench(page, '[data-type="sword"]')).toHaveAttribute('data-count', '9');
+  await dragStack();
+  await page.click('[data-bulk="max"]');
+  await page.click('[data-testid="bulk-confirm"]');
+  await expect(placed(page, '[data-type="sword"]')).toHaveAttribute('data-rank', '11');
+  await expect(bench(page, '[data-type="sword"]')).toHaveCount(0);
+  // ranks add up when merging (★11 + ★5 = ★16)
+  await page.evaluate(() => { const s = __game.store; s.recruit('sword').rank = 5; s.save(); __game.refresh(); });
   await bench(page, '[data-type="sword"]').first().click();
   await tapCell(page, await placed(page, '[data-type="sword"]').getAttribute('data-cell'));
-  await expect(page.locator('#toast')).toHaveText(JA['prep.maxRank']);
-  await expect(placed(page, '[data-type="sword"]')).toHaveAttribute('data-rank', '10');
+  await expect(placed(page, '[data-type="sword"]')).toHaveAttribute('data-rank', '16');
+  // no rank cap: ★16 + ★90 = ★106, and a ★100+ character keeps merging
+  await page.evaluate(() => { const s = __game.store; s.recruit('sword').rank = 90; s.save(); __game.refresh(); });
+  await bench(page, '[data-type="sword"]').first().click();
+  await tapCell(page, await placed(page, '[data-type="sword"]').getAttribute('data-cell'));
+  await expect(placed(page, '[data-type="sword"]')).toHaveAttribute('data-rank', '106');
+  await page.evaluate(() => { const s = __game.store; s.recruit('sword').rank = 12239; s.save(); __game.refresh(); });
+  await bench(page, '[data-type="sword"]').first().click();
+  await tapCell(page, await placed(page, '[data-type="sword"]').getAttribute('data-cell'));
+  const big = placed(page, '[data-type="sword"]');
+  await expect(big).toHaveAttribute('data-rank', '12345');
+  await expect(big.locator('.rank')).toHaveText('★12K');   // huge ranks are shortened on the badge
+});
+
+test('ステージ100からは自陣・敵陣が10×5の50マスになる', async ({ page }) => {
+  const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+  await gotoPrep(page, { stage: 99 });
+  await expect(page.locator('.cell.ally')).toHaveCount(15);
+  await expect(page.locator('.cell.enemy')).toHaveCount(15);
+  await page.click('#btn-battle-home');
+  await page.evaluate(() => { const s = __game.store; s.data.coins = 1e6; s.recruitMany('sword', 60); s.data.roster.forEach((c) => { c.rank = 100; }); s.save(); __game.setStage(100); });
+  await page.click('#btn-home-start');
+  await expect(page.locator('.cell.ally')).toHaveCount(50);
+  await expect(page.locator('.cell.enemy')).toHaveCount(50);
+  // the 4 units placed on the small board were carried over (same rows, centred)
+  await expect(placed(page)).toHaveCount(4);
+  await expect(placed(page, '[data-cell="4"]')).toHaveCount(1);
+  // tiles beyond the old 5x3 area can be used
+  await bench(page, '[data-type="sword"]').click();
+  await tapCell(page, 49);
+  await expect(placed(page, '[data-cell="49"]')).toHaveCount(1);
+  // auto arrange fills all 50 tiles
+  await page.click('#btn-auto');
+  await page.click('[data-testid="auto-confirm"]');
+  await expect(placed(page)).toHaveCount(50);
+  // the field fits on screen
+  const fb = await page.locator('#field').boundingBox(); const vp = page.viewportSize();
+  expect(fb.x).toBeGreaterThanOrEqual(0); expect(fb.x + fb.width).toBeLessThanOrEqual(vp.width + 1);
+  // fight on the big board
+  await page.click('#btn-fight');
+  await expect(page.locator('[data-testid="battle-unit"]')).toHaveCount(50 + 15);
+  await page.evaluate(() => __game.setSpeed(8));
+  await expect(page.locator('#overlay-result')).toBeVisible({ timeout: 60000 });
+  expect(errs).toEqual([]);
+});
+
+test('おまかせ編成：空きマスを埋めて残りを合体し、元に戻せる', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => { const s = __game.store; s.data.coins = 100000; s.recruitMany('sword', 20); s.recruitMany('archer', 6); s.save(); });
+  await page.click('#btn-home-start');
+  const before = await page.evaluate(() => __game.store.snapshot());
+  await page.click('#btn-auto');
+  await expect(page.locator('[data-testid="auto-arrange"]')).toBeVisible();
+  await expect(page.locator('[data-testid="auto-plan"] li').first()).toBeVisible();
+  // switch strategy -> preview changes
+  const evenText = await page.locator('[data-testid="auto-plan"]').textContent();
+  await page.click('[data-mode="front"]');
+  await expect(page.locator('[data-testid="auto-plan"]')).not.toHaveText(evenText);
+  await page.click('[data-mode="even"]');
+  await page.click('[data-testid="auto-confirm"]');
+  await expect(placed(page)).toHaveCount(15);                    // every tile filled
+  await expect(bench(page)).toHaveCount(0);                      // the rest merged
+  const total = await page.evaluate(() => __game.store.data.roster.reduce((a, c) => a + c.rank, 0));
+  expect(total).toBe(32);                                        // ranks are conserved (6 + 26 recruits)
+  // melee in front, ranged in back
+  const front = await placed(page, '[data-type="sword"]').evaluateAll((els) => els.map((e) => +e.dataset.cell));
+  expect(Math.min(...front)).toBeLessThan(5);
+  await page.click('#btn-undo');
+  expect(await page.evaluate(() => __game.store.snapshot())).toBe(before);
+  await expect(placed(page)).toHaveCount(4);
+});
+
+test('キャラ詳細から一括合体・ロック（ロック中は素材にならない）', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => { const s = __game.store; s.data.coins = 10000; s.recruitMany('archer', 4); s.save(); __game.refresh(); });
+  const placedArcherId = await page.evaluate(() => { const s = __game.store; return s.data.roster.find((c) => c.type === 'archer' && s.cellOf(c.id) != null).id; });
+  // lock one benched archer
+  const lockedId = await page.evaluate(() => { const s = __game.store; const c = s.data.roster.find((x) => x.type === 'archer' && s.cellOf(x.id) == null); return c.id; });
+  await page.locator(`.roster-card[data-char-id="${lockedId}"]`).click();
+  await page.click('[data-testid="btn-lock"]');
+  await expect(page.locator('[data-testid="btn-lock"]')).toHaveText(JA['lock.on']);
+  await page.click('#btn-modal-close');
+  await expect(page.locator(`.roster-card[data-char-id="${lockedId}"] .lock-mark`)).toBeVisible();
+  // bulk merge from the placed archer's detail screen
+  await page.locator(`.roster-card[data-char-id="${placedArcherId}"]`).click();
+  await expect(page.locator('[data-testid="btn-bulk"]')).toHaveText(JA['bulk.open'].replace('{n}', '3'));
+  await page.click('[data-testid="btn-bulk"]');
+  await expect(page.locator('[data-testid="bulk-count"]')).toHaveText('3');
+  await page.click('[data-testid="bulk-confirm"]');
+  const st = await page.evaluate(([p, l]) => { const s = __game.store; return { rank: s.char(p).rank, locked: !!s.char(l) }; }, [placedArcherId, lockedId]);
+  expect(st).toEqual({ rank: 4, locked: true });
+  // a locked unit can't be merged by hand either
+  await page.click('#btn-home-start');
+  await page.evaluate(() => { __game.G.selected = null; });
+  await bench(page, '[data-type="archer"]').click();
+  await tapCell(page, await placed(page, `[data-char-id="${placedArcherId}"]`).getAttribute('data-cell'));
+  await expect(page.locator('#toast')).toHaveText(JA['prep.locked']);
+});
+
+test('ショップで×10・最大まとめて雇用でき、元に戻せる', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => __game.setCoins(1000));
+  await page.click('#btn-home-shop');
+  await page.click('[data-buy-char10="sword"]');                  // 10 x 50
+  await expect(page.locator('[data-testid="shop-coins"]')).toHaveText('500');
+  await expect(page.locator('[data-buy-charmax="lancer"]')).toHaveText(JA['shop.buyMax'].replace('{k}', '7'));
+  await page.click('[data-buy-charmax="lancer"]');                // 7 x 70 = 490
+  await expect(page.locator('[data-testid="shop-coins"]')).toHaveText('10');
+  await expect(page.locator('[data-buy-char10="sword"]')).toBeDisabled();
+  let n = await page.evaluate(() => __game.store.data.roster.length);
+  expect(n).toBe(6 + 10 + 7);
+  await page.click('#btn-undo');
+  await expect(page.locator('[data-testid="shop-coins"]')).toHaveText('500');
+  n = await page.evaluate(() => __game.store.data.roster.length);
+  expect(n).toBe(16);
 });
 
 test('別のキャラクタは合体できない', async ({ page }) => {
@@ -408,8 +542,8 @@ test('勝利すると多いコイン、敗北すると少ないコインを獲�
 test('ステージを進むごとに敵が強くなる', async ({ page }) => {
   await gotoHome(page);
   const power = await page.evaluate(async () => {
-    const { enemyWave, computeStats } = await import('/js/data.js');
-    return [1, 5, 10, 20].map((s) => { const w = enemyWave(s); return w.units.reduce((a, u) => { const st = computeStats(u.type, u.rank, {}, w.mult); return a + st.maxHp * st.atk; }, 0); });
+    const { enemyWave, wavePower } = await import('/js/data.js');
+    return [1, 5, 10, 20, 50, 100].map((s) => { const w = enemyWave(s); return wavePower(w.units, w.mult); });
   });
   for (let i = 1; i < power.length; i++) expect(power[i]).toBeGreaterThan(power[i - 1]);
 });
@@ -473,4 +607,55 @@ test('多言語対応している（日本語/英語/中国語/韓国語）', as
   await startBattle(page, { speed: 8 });
   await waitResult(page);
   await expect(page.locator('#result-title')).toHaveText(STRINGS.en['result.win']);
+});
+
+test('BGM: ホームは待機曲、バトル中はバトル曲が鳴り、オフにできる', async ({ page }) => {
+  const cur = () => page.evaluate(() => __game.bgm.current);
+  await gotoHome(page);
+  // the tap on the title unlocked audio and started the calm home theme
+  await expect.poll(() => page.evaluate(() => __game.bgm.unlocked)).toBe(true);
+  await expect.poll(cur).toBe('home');
+  await page.click('#btn-home-start');
+  await expect(page.locator('#prep-panel')).toBeVisible();
+  await expect.poll(cur).toBe('home');                 // formation keeps the waiting music
+  await startBattle(page, { speed: 8 });
+  await expect.poll(cur).toBe('battle');               // fighting switches to the battle theme
+  await waitResult(page);
+  const r = await page.locator('#overlay-result').getAttribute('data-result');
+  expect(['win', 'lose', 'home']).toContain(await cur());  // result jingle, then back to the calm theme
+  await expect.poll(cur, { timeout: 15_000 }).toBe('home');
+  expect(['win', 'lose']).toContain(r);
+  // mute: stops the music and is remembered after a reload
+  await page.click('#btn-result-home');
+  await page.click('[data-testid="btn-sound"]');
+  await expect(page.locator('[data-testid="btn-sound"]')).toHaveClass(/off/);
+  await expect.poll(cur).toBe(null);
+  expect(await page.evaluate(() => __game.store.data.bgm)).toBe(false);
+  await page.reload();
+  await expect(page.locator('[data-testid="btn-sound-title"]')).toHaveClass(/off/);
+  await page.click('#btn-title-start');
+  await page.click('#btn-home-start');
+  await startBattle(page, { speed: 1 });
+  expect(await cur()).toBe(null);                      // stays silent in battle too
+  await page.click('[data-testid="btn-sound-battle"]');
+  await expect.poll(cur).toBe('battle');               // turning it on plays the right track
+});
+
+test('BGM: 曲を実際に音声として合成でき、無音でも音割れでもない', async ({ page }) => {
+  await page.goto('/index.html');
+  const lv = await page.evaluate(async () => {
+    const { Bgm } = await import('./js/audio.js');
+    const out = {};
+    for (const [n, s] of [['home', 6], ['battle', 6], ['win', 3], ['lose', 5]]) {
+      const d = (await Bgm.render(n, s, 22050)).getChannelData(0);
+      let peak = 0, sum = 0; for (const v of d) { peak = Math.max(peak, Math.abs(v)); sum += v * v; }
+      out[n] = { peak, rms: Math.sqrt(sum / d.length) };
+    }
+    return out;
+  });
+  for (const [n, { peak, rms }] of Object.entries(lv)) {
+    expect(rms, `${n} is audible`).toBeGreaterThan(0.02);
+    expect(peak, `${n} does not clip`).toBeLessThan(0.95);
+  }
+  expect(lv.battle.rms).toBeGreaterThan(lv.home.rms);    // the battle theme is more energetic
 });

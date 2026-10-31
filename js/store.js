@@ -1,5 +1,8 @@
 // Persistent player state.
-import { ITEMS, RECRUIT_COST, MAX_RANK, mergedRank, rewardCoins } from './data.js';
+import { ITEMS, RECRUIT_COST, SMALL_GRID, BIG_GRID, gridFor, centerCols, mergedRank, rewardCoins } from './data.js';
+
+// Classes that fight up close go to the front rows when auto-arranging.
+export const MELEE = new Set(['sword', 'shield', 'lancer', 'thief']);
 
 const KEY = 'pixel_brigade_save_v1';
 
@@ -13,9 +16,10 @@ export function defaultSave() {
     { id: 6, type: 'mage', rank: 1, equip: {} },
   ];
   return {
-    version: 1, coins: 100, stage: 1, nextId: 7, lang: null,
+    version: 1, coins: 100, stage: 1, nextId: 7, lang: null, bgm: true,
     roster, inventory: {},
-    formation: { 1: 2, 2: 1, 3: 12, 4: 11 }, // charId -> ally cell (row*5+col; row 0 = front line)
+    formation: { 1: 2, 2: 1, 3: 12, 4: 11 }, // small board: charId -> ally cell (row*5+col; row 0 = front line)
+    formationBig: null,                         // big board (stage 100+): charId -> cell (row*10+col); made on first use
   };
 }
 
@@ -32,7 +36,7 @@ export class Store {
     return defaultSave();
   }
   save() { try { this.storage && this.storage.setItem(KEY, JSON.stringify(this.data)); } catch (e) { /* ignore */ } }
-  reset() { const lang = this.data.lang; this.data = defaultSave(); this.data.lang = lang; this.save(); }
+  reset() { const { lang, bgm } = this.data; this.data = defaultSave(); this.data.lang = lang; this.data.bgm = bgm !== false; this.save(); }
 
   char(id) { return this.data.roster.find((c) => c.id === id); }
 
@@ -47,6 +51,26 @@ export class Store {
     this.save();
     return c;
   }
+
+  // Recruit up to `n` units (stops when coins run out). Returns the number recruited.
+  recruitMany(type, n) {
+    let k = 0;
+    while (k < n && this.data.coins >= RECRUIT_COST[type]) {
+      this.data.coins -= RECRUIT_COST[type];
+      this.data.roster.push({ id: this.data.nextId++, type, rank: 1, equip: {} });
+      k++;
+    }
+    if (k) this.save();
+    return k;
+  }
+  maxRecruitable(type) { return Math.floor(this.data.coins / RECRUIT_COST[type]); }
+
+  // ---- undo ----
+  snapshot() { return JSON.stringify(this.data); }
+  restore(snap) { this.data = JSON.parse(snap); this.save(); }
+
+  // ---- lock (locked characters are never used up by bulk merge / auto-arrange / merging) ----
+  setLocked(charId, on) { const c = this.char(charId); if (c) { if (on) c.locked = true; else delete c.locked; this.save(); } }
 
   buyItem(itemId) {
     const it = ITEMS[itemId];
@@ -79,36 +103,151 @@ export class Store {
   }
 
   // ---- formation ----
-  placedCount() { return Object.keys(this.data.formation).length; }
-  cellOf(charId) { const v = this.data.formation[charId]; return v == null ? null : v; }
+  grid() { return gridFor(this.data.stage); }
+  // The formation for the current board. On first reaching the big board, the small-board
+  // formation is carried over: same rows (front stays front), centred columns.
+  get formation() {
+    if (!this.grid().big) return this.data.formation;
+    if (!this.data.formationBig) {
+      const off = Math.floor((BIG_GRID.cols - SMALL_GRID.cols) / 2);
+      const f = {};
+      for (const [id, cell] of Object.entries(this.data.formation)) {
+        const r = Math.floor(cell / SMALL_GRID.cols), c = cell % SMALL_GRID.cols;
+        f[id] = r * BIG_GRID.cols + c + off;
+      }
+      this.data.formationBig = f;
+    }
+    return this.data.formationBig;
+  }
+  forgetChar(id) { delete this.data.formation[id]; if (this.data.formationBig) delete this.data.formationBig[id]; }
+  placedCount() { return Object.keys(this.formation).length; }
+  cellOf(charId) { const v = this.formation[charId]; return v == null ? null : v; }
   charAt(cell) {
-    const e = Object.entries(this.data.formation).find(([, c]) => c === cell);
+    const e = Object.entries(this.formation).find(([, c]) => c === cell);
     return e ? this.char(+e[0]) : null;
   }
   // No deployment limit: every ally cell can be filled.
   place(charId, cell) {
-    this.data.formation[charId] = cell; this.save(); return 'ok';
+    this.formation[charId] = cell; this.save(); return 'ok';
   }
-  unplace(charId) { delete this.data.formation[charId]; this.save(); }
+  unplace(charId) { delete this.formation[charId]; this.save(); }
   swap(aId, bId) {
     const ca = this.cellOf(aId), cb = this.cellOf(bId);
     if (cb == null) return;
-    if (ca == null) { delete this.data.formation[bId]; } else { this.data.formation[bId] = ca; }
-    this.data.formation[aId] = cb;
+    if (ca == null) { delete this.formation[bId]; } else { this.formation[bId] = ca; }
+    this.formation[aId] = cb;
     this.save();
   }
   // Merge source into target. Only identical character types can merge.
   merge(sourceId, targetId) {
     const s = this.char(sourceId), tg = this.char(targetId);
     if (!s || !tg || s === tg) return { ok: false, reason: 'invalid' };
+    if (s.locked) return { ok: false, reason: 'locked' };
     if (s.type !== tg.type) return { ok: false, reason: 'type' };
-    if (tg.rank >= MAX_RANK || s.rank >= MAX_RANK) return { ok: false, reason: 'max' };
     tg.rank = mergedRank(s.rank, tg.rank);
     for (const slot of Object.keys(s.equip)) this.unequip(s.id, slot, false);
     this.data.roster = this.data.roster.filter((c) => c !== s);
-    delete this.data.formation[s.id];
+    this.forgetChar(s.id);
     this.save();
     return { ok: true, rank: tg.rank, target: tg };
+  }
+
+  // ---- bulk merge ----
+  // Bench characters (not placed, not locked) of the same type that can be merged into `targetId`,
+  // smallest first. Ranks have no cap, so all of them can be merged (`max` = list length).
+  mergeCandidates(targetId) {
+    const tg = this.char(targetId);
+    if (!tg) return { list: [], max: 0 };
+    const list = this.data.roster
+      .filter((c) => c !== tg && c.type === tg.type && !c.locked && this.cellOf(c.id) == null)
+      .sort((a, b) => a.rank - b.rank || a.id - b.id);
+    return { list, max: list.length };
+  }
+  // Result of merging the first `n` candidates (without changing anything).
+  previewBulk(targetId, n) {
+    const tg = this.char(targetId); const { list, max } = this.mergeCandidates(targetId);
+    const used = list.slice(0, Math.min(n, max));
+    const equipped = used.filter((c) => Object.keys(c.equip).length).length;
+    return { from: tg.rank, to: used.reduce((a, c) => a + c.rank, tg.rank), count: used.length, max, available: list.length, equipped, ids: used.map((c) => c.id) };
+  }
+  bulkMerge(targetId, n) {
+    const pv = this.previewBulk(targetId, n);
+    const tg = this.char(targetId);
+    for (const id of pv.ids) {
+      const s = this.char(id);
+      tg.rank = mergedRank(tg.rank, s.rank);
+      for (const slot of Object.keys(s.equip)) this.unequip(s.id, slot, false);
+      this.data.roster = this.data.roster.filter((c) => c !== s);
+      this.forgetChar(s.id);
+    }
+    this.save();
+    return { count: pv.ids.length, rank: tg.rank };
+  }
+
+  // ---- auto arrange ----
+  // Plan: 1) fill empty cells from the bench (strongest first, mixing classes; melee to the front,
+  // ranged to the back), 2) merge the rest of the bench into placed units of the same class,
+  // either 'even' (raise the weakest first) or 'front' (concentrate on front-row units).
+  planAuto(mode = 'even') {
+    const g = this.grid(), form = this.formation, colOrder = centerCols(g.cols);
+    const placedIds = new Set(Object.keys(form).map(Number));
+    const free = new Set(Array.from({ length: g.cells }, (_, i) => i));
+    for (const c of Object.values(form)) free.delete(c);
+    const bench = this.data.roster.filter((c) => !placedIds.has(c.id));
+    // round-robin over classes, strongest of each class first
+    const byType = {};
+    for (const c of [...bench].sort((a, b) => b.rank - a.rank || a.id - b.id)) (byType[c.type] ||= []).push(c);
+    const pickOrder = [];
+    const queues = Object.values(byType).sort((a, b) => b[0].rank - a[0].rank || b.length - a.length);
+    while (pickOrder.length < free.size && queues.some((q) => q.length)) for (const q of queues) if (q.length && pickOrder.length < free.size) pickOrder.push(q.shift());
+    const cellsFor = (melee) => {
+      const rows = Array.from({ length: g.zoneRows }, (_, i) => (melee ? i : g.zoneRows - 1 - i));
+      const out = []; for (const r of rows) for (const col of colOrder) out.push(r * g.cols + col);
+      return out;
+    };
+    const places = [];
+    for (const melee of [true, false]) {
+      for (const c of pickOrder.filter((x) => MELEE.has(x.type) === melee)) {
+        const cell = cellsFor(melee).find((x) => free.has(x));
+        free.delete(cell); places.push({ id: c.id, cell, type: c.type, rank: c.rank });
+      }
+    }
+    // merging
+    const placedNow = new Set(places.map((p) => p.id));
+    const cellOf = (id) => (form[id] != null ? form[id] : places.find((p) => p.id === id).cell);
+    const targets = this.data.roster.filter((c) => placedIds.has(c.id) || placedNow.has(c.id));
+    const plannedRank = new Map(targets.map((c) => [c.id, c.rank]));
+    const sources = bench.filter((c) => !placedNow.has(c.id) && !c.locked).sort((a, b) => b.rank - a.rank || a.id - b.id);
+    const mergeMap = new Map();
+    for (const src of sources) {
+      let cand = targets.filter((tg) => tg.type === src.type);
+      if (!cand.length) continue;
+      if (mode === 'front') cand.sort((a, b) => Math.floor(cellOf(a.id) / g.cols) - Math.floor(cellOf(b.id) / g.cols) || plannedRank.get(b.id) - plannedRank.get(a.id) || cellOf(a.id) - cellOf(b.id));
+      else cand.sort((a, b) => plannedRank.get(a.id) - plannedRank.get(b.id) || cellOf(a.id) - cellOf(b.id));
+      const tg = cand[0];
+      plannedRank.set(tg.id, plannedRank.get(tg.id) + src.rank);
+      (mergeMap.get(tg.id) || mergeMap.set(tg.id, []).get(tg.id)).push(src.id);
+    }
+    const merges = [...mergeMap].map(([targetId, sourceIds]) => {
+      const tg = this.char(targetId);
+      return { targetId, type: tg.type, cell: cellOf(targetId), from: tg.rank, to: plannedRank.get(targetId), sourceIds };
+    });
+    const leftover = bench.length - places.length - merges.reduce((a, m) => a + m.sourceIds.length, 0);
+    return { mode, places, merges, leftover };
+  }
+  applyPlan(plan) {
+    for (const p of plan.places) this.formation[p.id] = p.cell;
+    for (const m of plan.merges) {
+      const tg = this.char(m.targetId);
+      for (const id of m.sourceIds) {
+        const s = this.char(id); if (!s) continue;
+        tg.rank = mergedRank(tg.rank, s.rank);
+        for (const slot of Object.keys(s.equip)) this.unequip(s.id, slot, false);
+        this.data.roster = this.data.roster.filter((c) => c !== s);
+        this.forgetChar(s.id);
+      }
+    }
+    this.save();
   }
 
   // ---- results ----
