@@ -321,3 +321,43 @@ test('battles on the big board use the whole 10-wide field', () => {
   run(bt, 3);
   assert.ok(a.x > 5, 'not clamped to the small board');
 });
+
+// ---------- magic: share of max HP, area, both teams ----------
+test('magic takes a share of MAX HP from every enemy in the area (ignores defence)', () => {
+  const mage = makeUnit({ team: 'ally', type: 'mage', rank: 1, cell: 12 });
+  const tgt = makeUnit({ team: 'enemy', type: 'shield', rank: 50, cell: 7 });     // huge HP & DEF
+  const near = makeUnit({ team: 'enemy', type: 'sword', rank: 1, cell: 7 }); near.x = tgt.x + 1;   // inside radius 1.25
+  const far = makeUnit({ team: 'enemy', type: 'sword', rank: 1, cell: 7 }); far.x = tgt.x + 2;     // outside
+  const buddy = makeUnit({ team: 'ally', type: 'sword', rank: 1, cell: 7 }); buddy.x = tgt.x; buddy.y = tgt.y + 0.3;
+  const bt = new Battle({ allies: [mage, buddy], enemies: [tgt, near, far] });
+  bt.rnd = () => 0.5;
+  bt.applyMagic(mage, tgt);
+  assert.equal(mage.magic.pct, 0.08);
+  assert.equal(tgt.maxHp - tgt.hp, Math.round(tgt.maxHp * 0.08), 'share of max HP, defence ignored');
+  assert.equal(near.maxHp - near.hp, Math.round(near.maxHp * 0.08), 'area');
+  assert.equal(far.hp, far.maxHp, 'outside the area');
+  assert.equal(buddy.hp, buddy.maxHp, 'no friendly fire');
+});
+
+test('magic share grows with rank (capped) and with weapons / buffs', () => {
+  const pct = (rank, equip = {}) => { const u = makeUnit({ team: 'ally', type: 'mage', rank, equip, cell: 12 }); return new Battle({ allies: [u], enemies: [] }).magicPct(u); };
+  assert.ok(pct(50) > pct(1) && pct(100) > pct(50));
+  assert.equal(pct(100000), 0.25, 'capped at 25%');
+  assert.ok(pct(1, { weapon: 'mythril_sword' }) > pct(1) * 1.4, 'weapon raises the share');
+});
+
+test('enemies use magic too: waves have mages from stage 2, and they hit allies by % of max HP', () => {
+  assert.equal(enemyWave(1).units.filter((u) => u.type === 'mage').length, 0);
+  for (const st of [2, 5, 20, 60, 99, 100, 135]) {
+    const w = enemyWave(st); const n = w.units.filter((u) => u.type === 'mage').length;
+    assert.equal(n, Math.max(1, Math.round(w.units.length / 8)), `stage ${st}`);
+  }
+  // a weak enemy mage still hurts a ★1000 ally: the damage scales with the ally's max HP
+  const em = makeUnit({ team: 'enemy', type: 'mage', rank: 1, cell: 2 });
+  const big = makeUnit({ team: 'ally', type: 'shield', rank: 1000, cell: 2 });
+  const bt = new Battle({ allies: [big], enemies: [em] }); bt.trace = [];
+  let t = 0; while (!bt.trace.some((x) => x.magic) && t++ < 1200) bt.step(1 / 60);
+  const hit = bt.trace.find((x) => x.magic);
+  assert.ok(hit && hit.to === big.uid);
+  assert.ok(Math.abs(hit.amount / big.maxHp - 0.08) < 0.01, 'about 8% of max HP');
+});

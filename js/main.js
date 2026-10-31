@@ -277,6 +277,8 @@ function openCharDetail(id) {
     const tbl = el('table', 'stat-table');
     const rows = [['stat.hp', s.maxHp], ['stat.atk', s.atk], ['stat.def', s.def], ['stat.range', s.range], ['stat.interval', s.interval + 's']];
     if (s.heal) rows.push(['stat.heal', s.heal]);
+    // magic: share of the target's max HP per hit (weapons raise it in proportion to the attack they add)
+    if (s.magic) rows.push(['stat.magic', (s.magic.pct * s.atk / computeStats(c.type, c.rank).atk * 100).toFixed(1) + '%']);
     for (const [k, v] of rows) { const tr = el('tr'); tr.innerHTML = `<td>${t(k)}</td><td data-stat="${k}">${v}</td>`; tbl.appendChild(tr); }
     box.appendChild(tbl);
     const acts = el('div', 'seg');
@@ -671,10 +673,10 @@ function handleEvents(b) {
       }
       case 'damage': {
         if (!u) break;
-        fxAt(ev.kind === 'poison' ? 'dmg poison' : 'dmg', u.x, u.y - 0.9, ev.amount);
+        fxAt(ev.kind === 'poison' ? 'dmg poison' : ev.kind === 'magic' ? 'dmg magic' : 'dmg', u.x, u.y - 0.9, ev.amount);
         const ue = G.unitEls.get(ev.uid);
         if (ue) { ue.classList.add('hit'); setTimeout(() => ue.classList.remove('hit'), 120); }
-        const att = b.get(ev.from); if (att && att.type === 'mage') fxAt('burst', u.x, u.y - 0.35);
+        if (ev.kind === 'magic') { const att = b.get(ev.from); fxAt('burst' + (att && att.team === 'enemy' ? ' dark-burst' : ''), u.x, u.y - 0.35); }
         break;
       }
       case 'breath': {
@@ -686,6 +688,13 @@ function handleEvents(b) {
         break;
       }
       case 'slam': fxAt('quake', ev.x, ev.y); break;
+      case 'magic': {   // area of the spell (everyone inside loses a share of max HP)
+        const a = b.get(ev.uid) || b.removed.find((r) => r.uid === ev.uid);
+        const e = fxAt('magic-area' + (a && a.team === 'enemy' ? ' enemy' : ''), ev.x, ev.y);
+        e.style.width = ev.r * 2 * G.cs + 'px'; e.style.height = ev.r * G.cs + 'px';
+        e.style.margin = `${-ev.r * G.cs / 2}px 0 0 ${-ev.r * G.cs}px`;
+        break;
+      }
       case 'charge': if (u) fxAt('dust', u.x, u.y); break;
       case 'chant': break; // shown by the .state-cast magic circle
       case 'summon': if (u) fxAt('burst necro-burst', u.x, u.y - 0.35); break;

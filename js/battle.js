@@ -15,7 +15,8 @@ export function makeUnit({ team, type, rank, equip, cell, mult = 1, charId = nul
     uid: uidSeq++, charId, team, type, rank,
     x: p.x, y: p.y,
     hp: st.maxHp, maxHp: st.maxHp, atk: st.atk, def: st.def,
-    range: st.range, speed: st.speed, interval: st.interval, splash: st.splash, heal: st.heal,
+    range: st.range, speed: st.speed, interval: st.interval, magic: st.magic, heal: st.heal,
+    atk0: computeStats(type, rank, {}, mult).atk,   // attack without equipment (weapons scale magic)
     prey: st.prey, charge: st.charge, chant: st.chant, buff: st.buff,
     buffUntil: 0, buffAmt: 0, chargeLeft: 0, chargeDx: 0, chargeDy: 0, chargeHit: null,
     assassin: st.assassin, fly: st.fly, poison: st.poison, slam: st.slam, stun: st.stun, pierce: st.pierce, summon: st.summon,
@@ -102,6 +103,23 @@ export class Battle {
     if (this.trace) this.trace.push({ t: this.time, kind: 'damage', from: attacker.uid, to: target.uid, amount: dmg, hp: target.hp });
     if (target.hp <= 0) this.kill(target);
     return dmg;
+  }
+
+  // Magic: every enemy within the radius around `center` loses a share of its max HP (ignores defence).
+  // Weapons and the enchanter's buff raise the share in proportion to the attack they add.
+  magicPct(u) { return u.magic.pct * (this.atkOf(u) / Math.max(1, u.atk0)); }
+  applyMagic(u, center) {
+    const pct = this.magicPct(u);
+    this.events.push({ type: 'magic', uid: u.uid, x: center.x, y: center.y, r: u.magic.radius });
+    for (const o of this.enemiesOf(u)) {
+      if (o !== center && this.dist(o, center) > u.magic.radius) continue;
+      if (!this.alive(o)) continue;
+      const dmg = Math.max(1, Math.round(o.maxHp * pct * (0.95 + this.rnd() * 0.1)));
+      o.hp = Math.max(0, o.hp - dmg);
+      this.events.push({ type: 'damage', uid: o.uid, amount: dmg, from: u.uid, kind: 'magic' });
+      if (this.trace) this.trace.push({ t: this.time, kind: 'damage', magic: true, from: u.uid, to: o.uid, amount: dmg, hp: o.hp });
+      if (o.hp <= 0) this.kill(o);
+    }
   }
 
   // Poison damage (ignores defence). `src` is the poisoner (must be on the other team).
@@ -256,6 +274,7 @@ export class Battle {
     if (u.action === 'buff') { this.applyBuff(u); return; }
     if (u.action === 'summon') { u.casts++; this.doSummon(u, tgt); return; }
     u.casts++;
+    if (u.magic) { this.applyMagic(u, tgt); return; }
     this.applyDamage(u, tgt);
     if (u.poison && this.alive(tgt)) {
       // (re)apply poison: deals atk * poison per second for 4s
@@ -280,11 +299,6 @@ export class Battle {
         if (o === tgt) continue;
         const px = o.x - u.x, py = o.y - u.y, along = px * dx + py * dy;
         if (along > 0 && along <= d + u.pierce && Math.abs(px * dy - py * dx) <= 0.5) this.applyDamage(u, o, this.atkOf(u) * 0.7);
-      }
-    }
-    if (u.splash) {
-      for (const o of this.enemiesOf(u)) {
-        if (o !== tgt && this.dist(o, tgt) <= u.splash) this.applyDamage(u, o, this.atkOf(u) * 0.5);
       }
     }
   }

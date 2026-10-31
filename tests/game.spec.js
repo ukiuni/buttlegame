@@ -393,7 +393,7 @@ test('味方同士・敵同士の攻撃はダメージを与えない', async ({
   expect(r.aa).toBe(0); expect(r.aaHp[1]).toBe(r.aaHp[0]);
   expect(r.ee).toBe(0); expect(r.eeHp[1]).toBe(r.eeHp[0]);
   expect(r.ae).toBeGreaterThan(0); expect(r.aeHp[1]).toBeLessThan(r.aeHp[0]);
-  // full battle: every damage event crosses teams (including mage splash)
+  // full battle: every damage event crosses teams (including area magic)
   await page.evaluate(() => __game.setSpeed(8));
   await waitResult(page);
   const bad = await page.evaluate(() => {
@@ -695,4 +695,28 @@ test('PWA: マニフェストとアイコンが有効で、Service Worker によ
   await page.click('#btn-home-start');
   await expect(page.locator('#prep-panel')).toBeVisible();
   await context.setOffline(false);
+});
+
+test('魔法：敵も魔法を使い、範囲内の相手の最大HPの割合でダメージを与える', async ({ page }) => {
+  await gotoPrep(page, { stage: 2 });
+  // stage 2 already has an enemy mage
+  await expect(page.locator('.unit.team-enemy[data-type="mage"]')).toHaveCount(1);
+  // put our mage on the field too
+  await page.evaluate(() => { const s = __game.store; const m = s.data.roster.find((c) => c.type === 'mage'); s.place(m.id, 7); __game.refresh(); });
+  await expect(page.locator('.unit.placed[data-type="mage"]')).toHaveCount(1);
+  await startBattle(page, { speed: 1 });
+  // both sides cast: the area of the spell is drawn (orange = ours, purple = enemy)
+  await page.waitForSelector('.magic-area.enemy', { state: 'attached', timeout: 20_000 });
+  await page.waitForSelector('.magic-area:not(.enemy)', { state: 'attached', timeout: 20_000 });
+  await page.waitForSelector('.dmg.magic', { state: 'attached' });
+  const hits = await page.evaluate(() => __game.battle.trace.filter((x) => x.magic).map((x) => {
+    const b = __game.battle; const all = [...b.units, ...b.removed];
+    const from = all.find((u) => u.uid === x.from), to = all.find((u) => u.uid === x.to);
+    return { from: from.team, to: to.team, ratio: x.amount / to.maxHp, pct: from.magic.pct };
+  }));
+  expect(hits.some((h) => h.from === 'enemy')).toBe(true);
+  for (const h of hits) {
+    expect(h.from).not.toBe(h.to);
+    expect(Math.abs(h.ratio - h.pct)).toBeLessThan(0.02);   // share of the target's max HP
+  }
 });
