@@ -7,7 +7,9 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
-  reporter: [['list']],
+  // CI runners have 4 cores; the tests mostly wait on real-time battles, so 4 workers per job is safe
+  workers: process.env.CI ? 4 : undefined,
+  reporter: process.env.CI ? [['dot']] : [['list']],
   use: { baseURL: 'http://127.0.0.1:8123', trace: 'retain-on-failure' },
   webServer: {
     command: 'python3 -m http.server 8123 --bind 127.0.0.1',

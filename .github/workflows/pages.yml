@@ -1,4 +1,5 @@
 # Test the game, then publish it to GitHub Pages on every push to main.
+# The browser tests run as 3 parallel jobs (one per device), each installing only the browser it needs.
 name: Deploy to GitHub Pages
 
 on:
@@ -16,8 +17,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
+  unit:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm run test:unit   # pure Node tests, no dependencies needed
+
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - project: android
+            browser: chromium
+          - project: iphone
+            browser: webkit
+          - project: ipad
+            browser: webkit
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,21 +45,34 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
-      - run: npm run test:unit
-      - run: npx playwright test
+      - name: Get Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ steps.pw.outputs.version }}-${{ matrix.browser }}
+      - name: Install browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Install browser system dependencies (browser itself restored from cache)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps ${{ matrix.browser }}
+      - run: npx playwright test --project=${{ matrix.project }}
         env:
           CI: true
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.project }}
           path: test-results/
           retention-days: 7
 
   deploy:
-    needs: test
+    needs: [unit, e2e]
     runs-on: ubuntu-latest
     environment:
       name: github-pages
