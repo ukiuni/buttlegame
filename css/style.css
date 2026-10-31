@@ -115,9 +115,50 @@ img, .sprite { image-rendering: pixelated; image-rendering: crisp-edges; }
 .dmg.poison { color: #d080ff; font-size: 12px; }
 .breath { position: absolute; height: 12px; margin-top: -6px; transform-origin: 0 50%; border-radius: 6px; background: linear-gradient(90deg, #fff6a0, #ffb030 30%, #ff5020 80%, transparent); box-shadow: 0 0 10px #ff7a30; animation: breath .45s forwards; }
 @keyframes breath { from { opacity: 1; clip-path: inset(0 100% 0 0); } 40% { opacity: 1; clip-path: inset(0 0 0 0); } to { opacity: 0; } }
-.magic-area { position: absolute; border-radius: 50%; border: 3px solid #ff9a40; background: radial-gradient(#ffcf6055, #ff6a2033 60%, transparent 72%); box-shadow: 0 0 12px #ff9a40; animation: quake .5s forwards; pointer-events: none; }
-.magic-area.enemy { border-color: #c060ff; background: radial-gradient(#d080ff55, #7020c033 60%, transparent 72%); box-shadow: 0 0 12px #c060ff; }
-.burst.dark-burst { background: radial-gradient(#fff8, #b050ff88 50%, transparent 70%); }
+/* Warder barrier: translucent dome with a hex pattern; magic inside it is nullified */
+#auras { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.ward-dome { position: absolute; left: 0; top: 0; border-radius: 50%; pointer-events: none;
+  border: 2px solid #7fe8ff; box-shadow: 0 0 10px #40c8ff, inset 0 0 18px #40c8ffaa;
+  background: radial-gradient(closest-side, #a8f0ff33, #40c8ff40 75%, #40c8ff70 96%, transparent);
+  animation: ward-pulse 2.2s ease-in-out infinite; }
+.ward-dome .hex { position: absolute; inset: 0; border-radius: 50%; opacity: .45;
+  background-image: linear-gradient(30deg, #c8f4ff55 12%, transparent 12.5%, transparent 87%, #c8f4ff55 87.5%),
+    linear-gradient(150deg, #c8f4ff55 12%, transparent 12.5%, transparent 87%, #c8f4ff55 87.5%),
+    linear-gradient(90deg, transparent 46%, #c8f4ff44 47%, #c8f4ff44 53%, transparent 54%);
+  background-size: 14px 24px; animation: ward-drift 6s linear infinite; }
+.ward-dome.block { animation: ward-block .4s ease-out, ward-pulse 2.2s ease-in-out .4s infinite; }
+@keyframes ward-pulse { 50% { box-shadow: 0 0 16px #40c8ff, inset 0 0 26px #40c8ffcc; filter: brightness(1.15); } }
+@keyframes ward-drift { to { background-position: 28px 48px; } }
+@keyframes ward-block { 0% { filter: brightness(2.6); scale: 1.06; } 100% { filter: brightness(1); scale: 1; } }
+.ward-flash { position: absolute; width: 34px; height: 38px; margin: -19px 0 0 -17px; pointer-events: none;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  background: radial-gradient(#ffffffcc, #7fe8ffaa 50%, #40c8ff44); animation: burst .45s ease-out forwards; }
+.dmg.null { color: #9ff0ff; font-size: 12px; }
+#field.fighting .ward-dome { border-style: solid; }
+
+/* Magic: rune circle marks the area while casting; a pillar of light strikes on impact */
+.magic-circle, .light-pillar, .cast-glow { --c: #ffc040; --c2: #fff2b0; }
+.violet { --c: #c060ff; --c2: #f0d0ff; }
+.necro  { --c: #40ff90; --c2: #d0ffe0; }
+.arcane { --c: #40d0ff; --c2: #e0ffff; }
+.magic-circle { position: absolute; border-radius: 50%; pointer-events: none; z-index: 1;
+  border: 2px solid var(--c); box-shadow: 0 0 10px var(--c), inset 0 0 12px var(--c);
+  background: radial-gradient(closest-side, transparent 55%, color-mix(in srgb, var(--c) 30%, transparent) 80%, transparent);
+  animation: mc-in var(--dur, .9s) ease-out forwards; }
+.magic-circle .rune { position: absolute; inset: 14%; border-radius: 50%; border: 3px dashed var(--c2); opacity: .9; animation: mc-spin 1.1s linear infinite; }
+.magic-circle.impact { animation: mc-impact var(--dur, .7s) ease-out forwards; }
+@keyframes mc-in { 0% { scale: .2; opacity: 0; } 25% { scale: 1.05; opacity: 1; } 35% { scale: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes mc-impact { 0% { scale: 1; opacity: 1; filter: brightness(2.2); } 30% { scale: 1.08; } 100% { scale: 1.15; opacity: 0; filter: brightness(1); } }
+@keyframes mc-spin { to { rotate: 360deg; } }
+.light-pillar { position: absolute; pointer-events: none; z-index: 2; transform-origin: 50% 100%; border-radius: 40% 40% 30% 30% / 10% 10% 6% 6%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c) 70%, transparent) 22%, var(--c2) 45%, #fff 50%, var(--c2) 55%, color-mix(in srgb, var(--c) 70%, transparent) 78%, transparent),
+              linear-gradient(transparent, #fff0 10%);
+  -webkit-mask-image: linear-gradient(transparent, #000 30%, #000); mask-image: linear-gradient(transparent, #000 30%, #000);
+  filter: drop-shadow(0 0 8px var(--c)); mix-blend-mode: screen; animation: pillar var(--dur, .65s) ease-out forwards; }
+.light-pillar.mini { z-index: 3; opacity: .9; }
+@keyframes pillar { 0% { scale: .3 0; opacity: 0; } 18% { scale: 1.15 1; opacity: 1; } 40% { scale: 1 1; opacity: 1; } 100% { scale: .2 1; opacity: 0; } }
+.cast-glow { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(var(--c2), color-mix(in srgb, var(--c) 60%, transparent) 45%, transparent 70%); animation: burst var(--dur, .5s) ease-out forwards; }
 .quake { position: absolute; width: 90px; height: 34px; margin: -17px 0 0 -45px; border-radius: 50%; border: 4px solid #d8c8a0; animation: quake .45s forwards; }
 @keyframes quake { from { scale: .2; opacity: 1; } to { scale: 1.3; opacity: 0; } }
 .summon-circle { position: absolute; width: 40px; height: 16px; margin: -8px 0 0 -20px; border-radius: 50%; border: 3px solid #40ff90; box-shadow: 0 0 10px #40ff90; animation: quake .6s forwards; }

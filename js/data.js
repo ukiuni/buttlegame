@@ -1,6 +1,6 @@
 // Game data & pure rules (no DOM) — importable from Node tests.
 
-export const TYPES = ['sword', 'mage', 'archer', 'shield', 'healer', 'lancer', 'thief', 'enchanter', 'summoner'];
+export const TYPES = ['sword', 'mage', 'archer', 'shield', 'healer', 'lancer', 'thief', 'enchanter', 'summoner', 'warder'];
 // Ranks have no upper limit: merging always adds the two ranks together.
 // Enemy ranks are still generated up to ENEMY_MAX_RANK (the stat multiplier covers the rest).
 export const ENEMY_MAX_RANK = 100;
@@ -53,6 +53,9 @@ export const BASE = {
   enchanter: { hp: 80,  atk: 8,  def: 3, range: 2.6, speed: 0.95, interval: 2.4, buff: { radius: 2.2, dur: 3.5, base: 0.2, perRank: 0.003 } },
   // summoner: chants for a while, then calls a dragon (one at a time); weak magic otherwise
   summoner:  { hp: 80,  atk: 10, def: 3, range: 3.0, speed: 0.85, interval: 1.8, summon: 'dragon', chant: 4.0, magic: { pct: 0.03, perRank: 0.0003, max: 0.1, radius: 0.9 } },
+  // warder: an always-on barrier around itself — magic that would hit an ally inside it is nullified
+  // (radius 1.6 cells, +0.004 per rank, up to 2.6)
+  warder:    { hp: 110, atk: 10, def: 6, range: 2.4, speed: 0.9,  interval: 1.6, ward: { radius: 1.6, perRank: 0.004, max: 2.6 } },
   // ---- monster-only types (each has its own attack style) ----
   // bat: fast flyer (passes over other units) that ignores the front line and dives at the weakest (lowest HP) target
   bat:      { hp: 70,  atk: 16, def: 2,  range: 1.0, speed: 2.4,  interval: 0.8, assassin: true, fly: true, pw: 1.1 },
@@ -73,7 +76,7 @@ export const MONSTER_UNLOCK = { sword: 1, archer: 1, mage: 1, shield: 1, healer:
 export const MONSTER_TYPES = Object.keys(MONSTER_UNLOCK);
 const MELEE_FRONT = new Set(['sword', 'shield', 'golem', 'slime', 'bat']);
 
-export const RECRUIT_COST = { sword: 50, mage: 70, archer: 60, shield: 60, healer: 70, lancer: 70, thief: 60, enchanter: 80, summoner: 90 };
+export const RECRUIT_COST = { sword: 50, mage: 70, archer: 60, shield: 60, healer: 70, lancer: 70, thief: 60, enchanter: 80, summoner: 90, warder: 80 };
 
 export const SLOTS = ['weapon', 'armor', 'accessory'];
 export const ITEMS = {
@@ -99,6 +102,7 @@ export function computeStats(type, rank = 1, equip = {}, mult = 1) {
     interval: b.interval,
     magic: b.magic ? { pct: +Math.min(b.magic.max, b.magic.pct + b.magic.perRank * (rank - 1)).toFixed(4), radius: b.magic.radius } : null,
     heal: b.heal ? Math.round(b.heal * rm) : 0,
+    ward: b.ward ? { radius: +Math.min(b.ward.max, b.ward.radius + b.ward.perRank * (rank - 1)).toFixed(3) } : null,
     assassin: !!b.assassin, fly: !!b.fly, poison: b.poison || 0, slam: b.slam || 0, stun: b.stun || 0,
     pierce: b.pierce || 0, summon: b.summon || null,
     prey: !!b.prey, charge: b.charge || null, chant: b.chant || 0,

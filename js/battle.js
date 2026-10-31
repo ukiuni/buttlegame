@@ -17,7 +17,7 @@ export function makeUnit({ team, type, rank, equip, cell, mult = 1, charId = nul
     hp: st.maxHp, maxHp: st.maxHp, atk: st.atk, def: st.def,
     range: st.range, speed: st.speed, interval: st.interval, magic: st.magic, heal: st.heal,
     atk0: computeStats(type, rank, {}, mult).atk,   // attack without equipment (weapons scale magic)
-    prey: st.prey, charge: st.charge, chant: st.chant, buff: st.buff,
+    prey: st.prey, charge: st.charge, chant: st.chant, buff: st.buff, ward: st.ward,
     buffUntil: 0, buffAmt: 0, chargeLeft: 0, chargeDx: 0, chargeDy: 0, chargeHit: null,
     assassin: st.assassin, fly: st.fly, poison: st.poison, slam: st.slam, stun: st.stun, pierce: st.pierce, summon: st.summon,
     mult, casts: 0, summoner: null,
@@ -107,6 +107,13 @@ export class Battle {
 
   // Magic: every enemy within the radius around `center` loses a share of its max HP (ignores defence).
   // Weapons and the enchanter's buff raise the share in proportion to the attack they add.
+  // A living warder on the target's team whose barrier covers the target (null if unprotected).
+  wardOf(target) {
+    for (const w of this.units) {
+      if (w.ward && w.team === target.team && this.alive(w) && this.dist(w, target) <= w.ward.radius) return w;
+    }
+    return null;
+  }
   magicPct(u) { return u.magic.pct * (this.atkOf(u) / Math.max(1, u.atk0)); }
   applyMagic(u, center) {
     const pct = this.magicPct(u);
@@ -114,6 +121,12 @@ export class Battle {
     for (const o of this.enemiesOf(u)) {
       if (o !== center && this.dist(o, center) > u.magic.radius) continue;
       if (!this.alive(o)) continue;
+      const w = this.wardOf(o);
+      if (w) {   // inside a warder's barrier: the spell is nullified
+        this.events.push({ type: 'nullify', uid: o.uid, warder: w.uid, from: u.uid });
+        if (this.trace) this.trace.push({ t: this.time, kind: 'nullify', from: u.uid, to: o.uid, warder: w.uid });
+        continue;
+      }
       const dmg = Math.max(1, Math.round(o.maxHp * pct * (0.95 + this.rnd() * 0.1)));
       o.hp = Math.max(0, o.hp - dmg);
       this.events.push({ type: 'damage', uid: o.uid, amount: dmg, from: u.uid, kind: 'magic' });

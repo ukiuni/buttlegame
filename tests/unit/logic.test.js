@@ -361,3 +361,35 @@ test('enemies use magic too: waves have mages from stage 2, and they hit allies 
   assert.ok(hit && hit.to === big.uid);
   assert.ok(Math.abs(hit.amount / big.maxHp - 0.08) < 0.01, 'about 8% of max HP');
 });
+
+// ---------- warder (魔法防御師): nullifies magic inside its barrier ----------
+test('warder barrier nullifies magic for allies inside it, not outside; gone when the warder falls', () => {
+  const em = makeUnit({ team: 'enemy', type: 'mage', rank: 1, cell: 2 });
+  const wd = makeUnit({ team: 'ally', type: 'warder', rank: 1, cell: 12 });
+  const inside = makeUnit({ team: 'ally', type: 'sword', rank: 1, cell: 12 }); inside.x = wd.x + 1; inside.y = wd.y;   // radius 1.6
+  const outside = makeUnit({ team: 'ally', type: 'sword', rank: 1, cell: 12 }); outside.x = wd.x + 2.2; outside.y = wd.y;
+  const bt = new Battle({ allies: [wd, inside, outside], enemies: [em] }); bt.trace = [];
+  assert.equal(wd.ward.radius, 1.6);
+  // spell centred between them: radius 1.25 reaches both swordsmen
+  bt.applyMagic(em, { ...inside, x: wd.x + 1.6, y: wd.y });
+  assert.equal(inside.hp, inside.maxHp, 'inside the barrier: nullified');
+  assert.ok(outside.hp < outside.maxHp, 'outside the barrier: damaged');
+  assert.ok(bt.events.some((e) => e.type === 'nullify' && e.uid === inside.uid && e.warder === wd.uid));
+  bt.applyMagic(em, wd);
+  assert.equal(wd.hp, wd.maxHp, 'the warder protects itself');
+  // the barrier only blocks the enemy's magic: our own mage still hits enemies standing in it
+  const am = makeUnit({ team: 'ally', type: 'mage', rank: 1, cell: 13 });
+  const foe = makeUnit({ team: 'enemy', type: 'sword', rank: 1, cell: 2 }); foe.x = wd.x; foe.y = wd.y + 0.5;
+  bt.units.push(am, foe); bt.applyMagic(am, foe);
+  assert.ok(foe.hp < foe.maxHp);
+  // once the warder is down, magic gets through
+  bt.kill(wd); bt.applyMagic(em, inside);
+  assert.ok(inside.hp < inside.maxHp);
+});
+
+test('warder barrier grows with rank (capped); warder is recruitable', () => {
+  const r = (rank) => makeUnit({ team: 'ally', type: 'warder', rank, cell: 12 }).ward.radius;
+  assert.ok(r(100) > r(1)); assert.equal(r(100000), 2.6);
+  const s = new Store(mem()); s.data.coins = 1000;
+  const w = s.recruit('warder'); assert.equal(w.type, 'warder');
+});

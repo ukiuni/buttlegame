@@ -705,10 +705,17 @@ test('魔法：敵も魔法を使い、範囲内の相手の最大HPの割合で
   await page.evaluate(() => { const s = __game.store; const m = s.data.roster.find((c) => c.type === 'mage'); s.place(m.id, 7); __game.refresh(); });
   await expect(page.locator('.unit.placed[data-type="mage"]')).toHaveCount(1);
   await startBattle(page, { speed: 1 });
-  // both sides cast: the area of the spell is drawn (orange = ours, purple = enemy)
-  await page.waitForSelector('.magic-area.enemy', { state: 'attached', timeout: 20_000 });
-  await page.waitForSelector('.magic-area:not(.enemy)', { state: 'attached', timeout: 20_000 });
+  // both sides cast: a rune circle marks the area while casting (gold = ours, violet = enemy),
+  // then a pillar of light strikes on impact (plus thin pillars on everyone hit)
+  await page.waitForSelector('.magic-circle.violet .rune', { state: 'attached', timeout: 20_000 });
+  await page.waitForSelector('.magic-circle.gold .rune', { state: 'attached', timeout: 20_000 });
+  await page.waitForSelector('.magic-circle.impact', { state: 'attached', timeout: 20_000 });
+  await page.waitForSelector('.light-pillar:not(.mini)', { state: 'attached', timeout: 20_000 });
+  await page.waitForSelector('.light-pillar.mini', { state: 'attached', timeout: 20_000 });
   await page.waitForSelector('.dmg.magic', { state: 'attached' });
+  // the circle matches the spell's radius (2 x radius cells wide)
+  const ratio = await page.evaluate(() => { const c = document.querySelector('.magic-circle'); return parseFloat(c.style.width) / __game.G.cs; });
+  expect([2.5, 2.0, 1.8]).toContainEqual(Math.round(ratio * 10) / 10);
   const hits = await page.evaluate(() => __game.battle.trace.filter((x) => x.magic).map((x) => {
     const b = __game.battle; const all = [...b.units, ...b.removed];
     const from = all.find((u) => u.uid === x.from), to = all.find((u) => u.uid === x.to);
@@ -719,4 +726,38 @@ test('魔法：敵も魔法を使い、範囲内の相手の最大HPの割合で
     expect(h.from).not.toBe(h.to);
     expect(Math.abs(h.ratio - h.pct)).toBeLessThan(0.02);   // share of the target's max HP
   }
+});
+
+test('魔法防御師：結界の範囲が表示され、範囲内の味方への敵の魔法を無効化する', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => __game.setCoins(1000));
+  await page.click('#btn-home-shop');
+  await page.click('[data-buy-char="warder"]');
+  await page.click('#btn-modal-close');
+  await expect(page.locator('.roster-card[data-type="warder"]')).toHaveCount(1);
+  await page.evaluate(() => __game.setStage(2));            // stage 2 has an enemy mage
+  await page.click('#btn-home-start');
+  // place the warder (strong barrier) in the middle of our formation
+  await page.evaluate(() => { const s = __game.store; const w = s.data.roster.find((c) => c.type === 'warder'); w.rank = 100; s.place(w.id, 7); s.save(); __game.refresh(); });
+  await expect(page.locator('.unit.placed[data-type="warder"]')).toHaveCount(1);
+  // the barrier is already visible while arranging the formation, sized by its radius
+  const dome = page.locator('#auras [data-testid="ward-dome"]');
+  await expect(dome).toHaveCount(1);
+  const r = await page.evaluate(() => parseFloat(document.querySelector('.ward-dome').style.width) / __game.G.cs / 2);
+  expect(r).toBeCloseTo(1.6 + 0.004 * 99, 2);
+  // drawn as a true circle, matching the real (top-down) protected area
+  expect(await page.evaluate(() => { const d = document.querySelector('.ward-dome'); return d.style.width === d.style.height; })).toBe(true);
+  await startBattle(page, { speed: 2 });
+  await expect(dome).toHaveCount(1);                         // follows the warder in battle
+  // the enemy mage's spell is nullified: "無効" pops up and no ally inside took magic damage
+  await page.waitForSelector('.dmg.null', { state: 'attached', timeout: 30_000 });
+  await expect(page.locator('.dmg.null').first()).toHaveText(JA['battle.nullified']);
+  const res = await page.evaluate(() => {
+    const b = __game.battle; const all = [...b.units, ...b.removed];
+    const get = (id) => all.find((u) => u.uid === id);
+    return { nullified: b.trace.filter((x) => x.kind === 'nullify').length,
+      magicOnAllies: b.trace.filter((x) => x.magic && get(x.to).team === 'ally').length };
+  });
+  expect(res.nullified).toBeGreaterThan(0);
+  expect(res.magicOnAllies).toBe(0);
 });

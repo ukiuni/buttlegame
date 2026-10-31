@@ -27,6 +27,8 @@ const G = {
   rafId: 0,
   lastResult: null,
   grid: SMALL_GRID,     // board for the current stage (5x3, or 10x5 from stage 100)
+  magicCircles: new Map(), // caster uid -> rune circle shown while the spell is cast
+  auraEls: new Map(),      // warder uid -> barrier dome element
 };
 
 // ---------------- helpers ----------------
@@ -278,6 +280,7 @@ function openCharDetail(id) {
     const rows = [['stat.hp', s.maxHp], ['stat.atk', s.atk], ['stat.def', s.def], ['stat.range', s.range], ['stat.interval', s.interval + 's']];
     if (s.heal) rows.push(['stat.heal', s.heal]);
     // magic: share of the target's max HP per hit (weapons raise it in proportion to the attack they add)
+    if (s.ward) rows.push(['stat.ward', s.ward.radius.toFixed(2)]);
     if (s.magic) rows.push(['stat.magic', (s.magic.pct * s.atk / computeStats(c.type, c.rank).atk * 100).toFixed(1) + '%']);
     for (const [k, v] of rows) { const tr = el('tr'); tr.innerHTML = `<td>${t(k)}</td><td data-stat="${k}">${v}</td>`; tbl.appendChild(tr); }
     box.appendChild(tbl);
@@ -432,7 +435,7 @@ function renderTopbar() {
 
 function renderPrep() {
   renderTopbar();
-  const units = $('#units'); units.innerHTML = '';
+  const units = $('#units'); units.innerHTML = ''; clearAuras();
   // enemy preview
   const wave = enemyWave(store.data.stage);
   for (const e of wave.units) {
@@ -448,6 +451,8 @@ function renderPrep() {
     if (G.selected === c.id) u.classList.add('selected');
     const p = cellToField('ally', cell, G.grid); positionEl(u, p.x, p.y);
     units.appendChild(u);
+    const st = computeStats(c.type, c.rank, c.equip);
+    if (st.ward) { const a = makeAura(st.ward.radius); placeAura(a, p.x, p.y); $('#auras').appendChild(a); }
   }
   // bench
   $('#bench-list').innerHTML = '';
@@ -615,7 +620,7 @@ function startBattle() {
   $('#prep-panel').classList.add('hidden');
   $('#battle-panel').classList.remove('hidden');
   $('#btn-speed').textContent = t('battle.speed', { n: G.speed });
-  $('#units').innerHTML = ''; $('#fx').innerHTML = '';
+  $('#units').innerHTML = ''; $('#fx').innerHTML = ''; clearAuras();
   G.unitEls.clear();
   layoutField();
   renderBattle();
@@ -638,13 +643,67 @@ function startLoop() {
   };
   G.rafId = requestAnimationFrame(frame);
 }
-function stopLoop() { cancelAnimationFrame(G.rafId); G.rafId = 0; }
+function stopLoop() { cancelAnimationFrame(G.rafId); G.rafId = 0; G.magicCircles.clear(); }
 
 function fxAt(cls, x, y, text) {
   const e = el('div', cls); e.style.left = x * G.cs + 'px'; e.style.top = (y + OY) * G.cs + 'px';
   if (text != null) e.textContent = text;
   $('#fx').appendChild(e); setTimeout(() => e.remove(), 900);
   return e;
+}
+
+// ---- warder barrier: a translucent dome on the ground showing where magic is nullified ----
+function makeAura(radius) {
+  const a = el('div', 'ward-dome', { 'data-testid': 'ward-dome' });
+  a.appendChild(el('div', 'hex'));
+  sizeAura(a, radius);
+  return a;
+}
+function sizeAura(a, radius) {
+  const w = radius * 2 * G.cs;
+  if (a.dataset.r == radius && a.dataset.cs == G.cs) return;
+  // true circle: the board is a top-down grid, so the protected area reaches as far up/down as sideways
+  Object.assign(a.style, { width: w + 'px', height: w + 'px', margin: `${-w / 2}px 0 0 ${-w / 2}px` });
+  a.dataset.r = radius; a.dataset.cs = G.cs;
+}
+function placeAura(a, x, y) { a.style.transform = `translate(${Math.round(x * G.cs)}px, ${Math.round((y + OY) * G.cs)}px)`; }
+function clearAuras() { $('#auras').innerHTML = ''; G.auraEls.clear(); }
+
+// ---- magic FX: rune circle over the area while casting, then a pillar of light on impact ----
+// colour per caster: our mage = gold, enemy mage = violet, lich = green, summoner = cyan
+function magicColor(a) {
+  if (!a) return 'gold';
+  return a.type === 'lich' ? 'necro' : a.type === 'summoner' ? 'arcane' : a.team === 'enemy' ? 'violet' : 'gold';
+}
+// element at field position with a lifetime scaled by the battle speed
+function fxTimed(cls, x, y, ms) {
+  const e = el('div', cls); e.style.left = x * G.cs + 'px'; e.style.top = (y + OY) * G.cs + 'px';
+  e.style.setProperty('--dur', ms / G.speed + 'ms');
+  $('#fx').appendChild(e); setTimeout(() => e.remove(), ms / G.speed + 50);
+  return e;
+}
+function sizeCircle(e, r) {
+  const w = r * 2 * G.cs;
+  Object.assign(e.style, { width: w + 'px', height: w + 'px', margin: `${-w / 2}px 0 0 ${-w / 2}px` });   // exact area
+}
+// cast start: mark the area around the target
+function magicCast(a, tg) {
+  const c = fxTimed(`magic-circle ${magicColor(a)}`, tg.x, tg.y, (HIT_TIME * 1000) + 700);
+  sizeCircle(c, a.magic.radius);
+  c.appendChild(el('div', 'rune'));
+  G.magicCircles.set(a.uid, c);
+  fxTimed(`cast-glow ${magicColor(a)}`, a.x, a.y - 0.35, 500);
+}
+// impact: snap the circle onto the real centre, flash it, and drop a pillar of light
+function magicImpact(ev, a) {
+  const color = magicColor(a);
+  let c = G.magicCircles.get(ev.uid); G.magicCircles.delete(ev.uid);
+  if (!c || !c.isConnected) { c = fxTimed(`magic-circle ${color}`, ev.x, ev.y, 700); c.appendChild(el('div', 'rune')); }
+  c.style.left = ev.x * G.cs + 'px'; c.style.top = (ev.y + OY) * G.cs + 'px';
+  sizeCircle(c, ev.r); c.classList.add('impact');
+  const p = fxTimed(`light-pillar ${color}`, ev.x, ev.y, 650);
+  const w = Math.max(14, ev.r * G.cs * 0.9), h = G.cs * 3.2;
+  Object.assign(p.style, { width: w + 'px', height: h + 'px', margin: `${-h}px 0 0 ${-w / 2}px` });
 }
 
 function handleEvents(b) {
@@ -659,9 +718,10 @@ function handleEvents(b) {
         if (ev.action === 'buff') { fxAt('buff-ring', a.x, a.y + 0.1); break; }
         if (ev.action === 'charge') break; // lancer wind-up is shown by its pose
         if (a.type === 'dragon') break; // breath is drawn on the 'breath' event
-        if (['archer', 'mage', 'healer', 'lich', 'summoner', 'enchanter'].includes(a.type)) {
+        if (a.magic && ev.action === 'attack') { magicCast(a, tg); break; } // area magic: rune circle, then light pillar
+        if (['archer', 'mage', 'healer', 'lich', 'summoner', 'enchanter', 'warder'].includes(a.type)) {
           let kind = a.type === 'archer' ? 'arrow' : a.type === 'mage' ? (a.team === 'ally' ? 'fire' : 'dark') : a.type === 'lich' ? 'necro'
-            : a.type === 'summoner' ? 'arcane' : a.type === 'enchanter' ? 'spark' : 'heal';
+            : a.type === 'summoner' || a.type === 'warder' ? 'arcane' : a.type === 'enchanter' ? 'spark' : 'heal';
           const p = fxAt('proj ' + kind, a.x, a.y + hy);
           if (kind === 'arrow') p.style.transform = `rotate(${Math.atan2(tg.y - a.y, tg.x - a.x)}rad)`;
           p.style.transitionDuration = travel + 'ms';
@@ -676,7 +736,11 @@ function handleEvents(b) {
         fxAt(ev.kind === 'poison' ? 'dmg poison' : ev.kind === 'magic' ? 'dmg magic' : 'dmg', u.x, u.y - 0.9, ev.amount);
         const ue = G.unitEls.get(ev.uid);
         if (ue) { ue.classList.add('hit'); setTimeout(() => ue.classList.remove('hit'), 120); }
-        if (ev.kind === 'magic') { const att = b.get(ev.from); fxAt('burst' + (att && att.team === 'enemy' ? ' dark-burst' : ''), u.x, u.y - 0.35); }
+        if (ev.kind === 'magic') {   // a thin pillar of light on everyone caught in the spell
+          const att = b.get(ev.from) || b.removed.find((r) => r.uid === ev.from);
+          const p = fxTimed(`light-pillar mini ${magicColor(att)}`, u.x, u.y, 500);
+          const h = G.cs * 1.6; Object.assign(p.style, { width: G.cs * 0.4 + 'px', height: h + 'px', margin: `${-h}px 0 0 ${-G.cs * 0.2}px` });
+        }
         break;
       }
       case 'breath': {
@@ -688,13 +752,13 @@ function handleEvents(b) {
         break;
       }
       case 'slam': fxAt('quake', ev.x, ev.y); break;
-      case 'magic': {   // area of the spell (everyone inside loses a share of max HP)
-        const a = b.get(ev.uid) || b.removed.find((r) => r.uid === ev.uid);
-        const e = fxAt('magic-area' + (a && a.team === 'enemy' ? ' enemy' : ''), ev.x, ev.y);
-        e.style.width = ev.r * 2 * G.cs + 'px'; e.style.height = ev.r * G.cs + 'px';
-        e.style.margin = `${-ev.r * G.cs / 2}px 0 0 ${-ev.r * G.cs}px`;
+      case 'nullify': {   // magic hit a barrier: the dome flashes and the target shows "NULL"
+        const a = G.auraEls.get(ev.warder);
+        if (a) { a.classList.remove('block'); void a.offsetWidth; a.classList.add('block'); }
+        if (u) { fxAt('dmg null', u.x, u.y - 0.9, t('battle.nullified')); fxAt('ward-flash', u.x, u.y - 0.35); }
         break;
       }
+      case 'magic': magicImpact(ev, b.get(ev.uid) || b.removed.find((r) => r.uid === ev.uid)); break;
       case 'charge': if (u) fxAt('dust', u.x, u.y); break;
       case 'chant': break; // shown by the .state-cast magic circle
       case 'summon': if (u) fxAt('burst necro-burst', u.x, u.y - 0.35); break;
@@ -747,6 +811,15 @@ function renderBattle() {
     ue._fill.style.width = `${(100 * u.hp) / u.maxHp}%`;
   }
   for (const [uid, ue] of G.unitEls) if (!b.units.some((u) => u.uid === uid)) { ue.remove(); G.unitEls.delete(uid); }
+  // barriers follow their warder and vanish when it falls
+  for (const u of b.units) {
+    if (!u.ward) continue;
+    let a = G.auraEls.get(u.uid);
+    if (u.state === 'dying' || u.hp <= 0) { if (a) { a.remove(); G.auraEls.delete(u.uid); } continue; }
+    if (!a) { a = makeAura(u.ward.radius); a.dataset.uid = u.uid; $('#auras').appendChild(a); G.auraEls.set(u.uid, a); }
+    sizeAura(a, u.ward.radius); placeAura(a, u.x, u.y);
+  }
+  for (const [uid, a] of G.auraEls) if (!b.units.some((u) => u.uid === uid)) { a.remove(); G.auraEls.delete(uid); }
   updateBattleInfo();
 }
 
@@ -805,7 +878,7 @@ function init() {
       if (G.screen !== 'battle') return;
       layoutField();
       if (G.phase === 'prep') renderPrep();
-      else { for (const ue of G.unitEls.values()) ue.remove(); G.unitEls.clear(); renderBattle(); }
+      else { for (const ue of G.unitEls.values()) ue.remove(); G.unitEls.clear(); clearAuras(); renderBattle(); }
     }, 120);
   });
   document.addEventListener('gesturestart', (e) => e.preventDefault());

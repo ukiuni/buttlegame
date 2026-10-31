@@ -67,6 +67,7 @@ export const CHARS = {
 
   hero_lancer:   { skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'helmet', metal: '#e0c050', metalS: '#a08020', plume: '#3060e0', body: 'tunic', tunic: '#c03838', tunicS: '#802020', belt: '#e0c050', pants: '#504040', boot: C.boot, weapon: 'spear' },
   hero_thief:    { skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'bandana', hair: '#302838', band: '#d03040', bandS: '#902028', body: 'tunic', tunic: '#3c3c50', tunicS: '#24243a', belt: '#a07030', pants: '#2c2c3c', boot: '#201820', weapon: 'dagger', scarf: '#d03040' },
+  hero_warder: { skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'whitehood', hair: '#506080', hood: '#3a78d0', hoodS: '#24508c', trim: '#c8e8ff', body: 'robe', tunic: '#2c5aa8', tunicS: '#1c3c78', belt: '#c8e8ff', boot: '#3a4060', weapon: 'staff', orb: '#80e8ff' },
   hero_enchanter:{ skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'circlet', hair: '#f090c0', hairS: '#c06090', circlet: '#f0c040', gem: '#ff4060', body: 'robe', tunic: '#f0a830', tunicS: '#b87010', belt: '#ffffff', boot: '#8a5a2c', weapon: 'rod', orb: '#ffd040' },
   hero_summoner: { skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'hood', hair: '#40d0d0', hood: '#7a2a8a', hoodS: '#4c1458', body: 'robe', tunic: '#7a2a8a', tunicS: '#4c1458', belt: '#40d0d0', boot: '#302040', weapon: 'staff', orb: '#40d0ff' },
   hero_dragon:   { custom: 'dragon', body: '#3a70d0', bodyS: '#204090', belly: '#a0e0ff', wing: '#5a9ae8', wingS: '#203a80', eye: '#ffe040', horn: '#f0f0ff' },
