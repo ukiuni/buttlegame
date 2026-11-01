@@ -489,6 +489,63 @@ test('味方が全滅するとゲーム終了し、敗北画面がオーバー�
   await waitResult(page);
 });
 
+test('負けるまで自動で進む：勝てば操作なしで次のステージが始まり、負けたら止まる', async ({ page }) => {
+  await gotoPrep(page);
+  await startBattle(page, { speed: 8 });
+  await waitResult(page);
+  await expect(page.locator('#overlay-result')).toHaveAttribute('data-result', 'win');
+  await expect(page.getByTestId('btn-auto-advance')).toHaveText(JA['result.autoAdvance']);
+  await page.getByTestId('btn-auto-advance').click();
+  // stage 2 starts right away with the same formation; the stop button shows during the battle
+  await expect(page.locator('#overlay-result')).toBeHidden();
+  await expect(page.locator('#battle-panel')).toBeVisible();
+  await expect(page.locator('#battle-stage')).toHaveText(JA['common.stage'].replace('{n}', '2'));
+  await expect(page.getByTestId('btn-auto-stop')).toBeVisible();
+  // win → countdown on the result screen (no next/auto buttons), then stage 3 starts by itself
+  await waitResult(page);
+  await expect(page.locator('#overlay-result')).toHaveAttribute('data-result', 'win');
+  await expect(page.getByTestId('result-auto')).toBeVisible();
+  await expect(page.locator('#btn-next')).toBeHidden();
+  await expect(page.getByTestId('btn-auto-cancel')).toBeVisible();
+  await expect(page.locator('#battle-stage')).toHaveText(JA['common.stage'].replace('{n}', '3'), { timeout: 10_000 });
+  await expect(page.locator('#battle-panel')).toBeVisible();
+  await expect(page.locator('#overlay-result')).toBeHidden();
+  // jump ahead to a stage we cannot beat: after this win the next battle is lost and auto-advance stops
+  await page.evaluate(() => { __game.store.data.stage = 59; });
+  await waitResult(page);
+  await expect(page.locator('#battle-stage')).toHaveText(JA['common.stage'].replace('{n}', '60'), { timeout: 10_000 });
+  await expect(page.locator('#overlay-result')).toHaveAttribute('data-result', 'lose', { timeout: 60_000 });
+  await expect(page.locator('#btn-retry')).toBeVisible();
+  await expect(page.getByTestId('result-auto')).toBeHidden();
+  await page.waitForTimeout(3000);   // nothing restarts on its own after a defeat
+  await expect(page.locator('#overlay-result')).toBeVisible();
+  expect(await page.evaluate(() => __game.store.data.stage)).toBe(60);
+});
+
+test('負けるまで自動で進む：カウントダウン中に止めると、通常の勝利画面に戻る', async ({ page }) => {
+  await gotoPrep(page);
+  await startBattle(page, { speed: 8 });
+  await waitResult(page);
+  await page.getByTestId('btn-auto-advance').click();
+  await expect(page.getByTestId('btn-auto-stop')).toBeVisible();
+  await page.getByTestId('btn-auto-stop').click();          // stop during the battle
+  await expect(page.getByTestId('btn-auto-stop')).toBeHidden();
+  await waitResult(page);
+  await expect(page.getByTestId('result-auto')).toBeHidden();
+  await expect(page.locator('#btn-next')).toBeVisible();
+  await page.waitForTimeout(3000);
+  await expect(page.locator('#overlay-result')).toBeVisible();   // did not advance by itself
+  // start again, then cancel on the countdown screen
+  await page.getByTestId('btn-auto-advance').click();
+  await waitResult(page);
+  await expect(page.getByTestId('result-auto')).toBeVisible();
+  await page.getByTestId('btn-auto-cancel').click();
+  await expect(page.getByTestId('result-auto')).toBeHidden();
+  await expect(page.locator('#btn-next')).toBeVisible();
+  await page.waitForTimeout(3000);
+  await expect(page.locator('#overlay-result')).toBeVisible();
+});
+
 test('勝利画面・敗北画面からホーム画面に移動できる', async ({ page }) => {
   await gotoPrep(page);
   await startBattle(page, { speed: 8 });

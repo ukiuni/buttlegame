@@ -80,6 +80,7 @@
       </div>
       <div id="battle-panel" class="hidden">
         <button id="btn-speed" class="btn"></button>
+        <button id="btn-auto-stop" class="btn small hidden" data-testid="btn-auto-stop"></button>
       </div>
     </section>
 
@@ -88,8 +89,11 @@
       <div class="result-box">
         <h2 id="result-title"></h2>
         <p id="result-coins" class="result-coins"></p>
+        <p id="result-auto" class="result-auto hidden" data-testid="result-auto"></p>
         <div class="result-buttons">
           <button id="btn-next" class="btn big primary" data-i18n="result.next"></button>
+          <button id="btn-auto-advance" class="btn big" data-testid="btn-auto-advance" data-i18n="result.autoAdvance"></button>
+          <button id="btn-auto-cancel" class="btn big hidden" data-testid="btn-auto-cancel" data-i18n="result.autoStop"></button>
           <button id="btn-retry" class="btn big primary" data-i18n="result.retry"></button>
           <button id="btn-result-home" class="btn big" data-i18n="result.home"></button>
         </div>

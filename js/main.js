@@ -19,6 +19,7 @@ bgm.enabled = store.data.bgm !== false;
 const G = {
   screen: 'title',
   phase: null,          // 'prep' | 'battle'
+  autoAdvance: false, autoTimer: 0, autoLeft: 0,   // "advance until defeat" mode
   battle: null,
   speed: 1,
   cs: 48,
@@ -224,6 +225,7 @@ function initSound() {
 
 // ---------------- home ----------------
 function goHome() {
+  stopAutoAdvance();
   stopLoop();
   G.battle = null; G.phase = null;
   $('#overlay-result').classList.add('hidden');
@@ -461,7 +463,7 @@ function positionEl(u, x, y) {
 
 // ---------------- prep (formation) ----------------
 function enterPrep() {
-  stopLoop();
+  stopLoop(); clearTimeout(G.autoTimer); G.autoTimer = 0;
   G.battle = null; G.phase = 'prep'; G.selected = null;
   $('#overlay-result').classList.add('hidden');
   showScreen('battle');
@@ -670,6 +672,7 @@ function startBattle() {
   $('#prep-panel').classList.add('hidden');
   $('#battle-panel').classList.remove('hidden');
   $('#btn-speed').textContent = t('battle.speed', { n: G.speed });
+  renderAutoStop();
   $('#units').innerHTML = ''; $('#fx').innerHTML = ''; clearAuras();
   G.unitEls.clear();
   layoutField();
@@ -907,8 +910,37 @@ function finishBattle(b) {
   G.lastResult = { win, coins, stage };
   bgm.jingle(win ? 'win' : 'lose', 'home');
   renderTopbar();
+  if (!win) G.autoAdvance = false;   // auto-advance runs until the first defeat
   renderResult(G.lastResult);
   $('#overlay-result').classList.remove('hidden');
+  if (win && G.autoAdvance) {
+    // count down on the result screen, then start the next stage with the same formation
+    G.autoLeft = AUTO_ADVANCE_SEC;
+    const tick = () => {
+      if (!G.autoAdvance) return;
+      if (G.autoLeft <= 0) { autoNextStage(); return; }
+      renderResult(G.lastResult);
+      G.autoLeft--; G.autoTimer = setTimeout(tick, 1000);
+    };
+    tick();
+  }
+}
+
+// ---------------- auto-advance ("until defeat") ----------------
+const AUTO_ADVANCE_SEC = 2;
+function autoNextStage() {
+  enterPrep();
+  if (store.placedCount() === 0) { stopAutoAdvance(); return; }
+  startBattle();
+}
+function stopAutoAdvance() {
+  G.autoAdvance = false; clearTimeout(G.autoTimer); G.autoTimer = 0;
+  renderAutoStop();
+}
+function renderAutoStop() {
+  const b = $('#btn-auto-stop');
+  b.textContent = t('battle.autoStop');
+  b.classList.toggle('hidden', !G.autoAdvance);
 }
 
 function renderResult(r) {
@@ -917,8 +949,13 @@ function renderResult(r) {
   o.dataset.result = r.win ? 'win' : 'lose';
   $('#result-title').textContent = t(r.win ? 'result.win' : 'result.lose');
   $('#result-coins').textContent = t('result.coins', { n: r.coins });
-  $('#btn-next').classList.toggle('hidden', !r.win);
+  const auto = r.win && !!G.autoAdvance;
+  $('#btn-next').classList.toggle('hidden', !r.win || auto);
   $('#btn-retry').classList.toggle('hidden', r.win);
+  $('#btn-auto-advance').classList.toggle('hidden', !r.win || auto);
+  $('#btn-auto-cancel').classList.toggle('hidden', !auto);
+  $('#result-auto').classList.toggle('hidden', !auto);
+  if (auto) $('#result-auto').textContent = t('result.autoNext', { s: Math.max(1, G.autoLeft) });
 }
 
 // ---------------- wiring ----------------
@@ -935,6 +972,9 @@ function init() {
   $('#btn-auto').addEventListener('click', openAutoArrange);
   $('#btn-undo').addEventListener('click', doUndo);
   $('#btn-battle-home').addEventListener('click', goHome);
+  $('#btn-auto-advance').addEventListener('click', () => { G.autoAdvance = true; autoNextStage(); });
+  $('#btn-auto-cancel').addEventListener('click', () => { stopAutoAdvance(); renderResult(G.lastResult); });
+  $('#btn-auto-stop').addEventListener('click', () => { stopAutoAdvance(); toast(t('toast.autoStopped')); });
   $('#btn-speed').addEventListener('click', () => { G.speed = G.speed >= 4 ? 1 : G.speed * 2; updateBattleInfo(); });
   $('#btn-next').addEventListener('click', enterPrep);
   $('#btn-retry').addEventListener('click', enterPrep);

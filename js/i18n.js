@@ -3,6 +3,11 @@ export const LANGS = { ja: '日本語', en: 'English', zh: '中文', ko: '한국
 
 export const STRINGS = {
   ja: {
+    'result.autoAdvance': '負けるまで自動で進む',
+    'result.autoStop': '自動進行を止める',
+    'battle.autoStop': '自動進行中 ■停止',
+    'result.autoNext': '{s}秒後に次のステージを開始します',
+    'toast.autoStopped': '自動進行を止めました',
     'pwa.install': 'アプリとして追加',
     'pwa.title': 'ホーム画面に追加してアプリとして遊ぶ',
     'pwa.step1': 'Safari の共有ボタン（□に↑）をタップします',
@@ -85,6 +90,11 @@ export const STRINGS = {
     'result.home': 'ホームへ',
   },
   en: {
+    'result.autoAdvance': 'Auto-advance until defeat',
+    'result.autoStop': 'Stop auto-advance',
+    'battle.autoStop': 'AUTO ■Stop',
+    'result.autoNext': 'Next stage starts in {s}s',
+    'toast.autoStopped': 'Auto-advance stopped',
     'pwa.install': 'Install app',
     'pwa.title': 'Add to Home Screen to play as an app',
     'pwa.step1': 'Tap the Share button (square with ↑) in Safari',
@@ -167,6 +177,11 @@ export const STRINGS = {
     'result.home': 'Home',
   },
   zh: {
+    'result.autoAdvance': '自动推进直到失败',
+    'result.autoStop': '停止自动推进',
+    'battle.autoStop': '自动推进中 ■停止',
+    'result.autoNext': '{s}秒后开始下一关',
+    'toast.autoStopped': '已停止自动推进',
     'pwa.install': '添加为应用',
     'pwa.title': '添加到主屏幕，以应用方式游玩',
     'pwa.step1': '点击 Safari 的分享按钮（方框加↑）',
@@ -249,6 +264,11 @@ export const STRINGS = {
     'result.home': '返回主页',
   },
   ko: {
+    'result.autoAdvance': '패배할 때까지 자동 진행',
+    'result.autoStop': '자동 진행 중지',
+    'battle.autoStop': '자동 진행 중 ■중지',
+    'result.autoNext': '{s}초 후 다음 스테이지 시작',
+    'toast.autoStopped': '자동 진행을 중지했습니다',
     'pwa.install': '앱으로 추가',
     'pwa.title': '홈 화면에 추가하여 앱으로 플레이',
     'pwa.step1': 'Safari의 공유 버튼(□에 ↑)을 탭합니다',

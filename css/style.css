@@ -273,3 +273,5 @@ body.big-board #prep-panel .hint { display: none; }
 #field.big .dmg { font-size: 11px; }
 
 .install-steps { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 8px; line-height: 1.5; }
+.result-auto { color: #ffe070; margin: 6px 0 0; }
+#btn-auto-stop { margin-left: 8px; }
