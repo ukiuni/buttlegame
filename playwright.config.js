@@ -12,7 +12,7 @@ export default defineConfig({
   reporter: process.env.CI ? [['dot']] : [['list']],
   use: { baseURL: 'http://127.0.0.1:8123', trace: 'retain-on-failure' },
   webServer: {
-    command: 'python3 -m http.server 8123 --bind 127.0.0.1',
+    command: 'node tests/serve.mjs 8123',   // tiny Node server: no Python needed (works in the Playwright Docker image)
     url: 'http://127.0.0.1:8123/index.html',
     reuseExistingServer: true,
   },

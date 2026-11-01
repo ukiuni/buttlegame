@@ -1,5 +1,5 @@
 # Test the game, then publish it to GitHub Pages on every push to main.
-# The browser tests run as 5 parallel jobs (Android, iPhone x2, iPad x2), each installing only the browser it needs.
+# The browser tests run as 5 parallel jobs (Android, iPhone x2, iPad x2) inside the official Playwright Docker image.
 name: Deploy to GitHub Pages
 
 on:
@@ -28,44 +28,37 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Official Playwright image: browsers and their system libraries are preinstalled, so there is no
+    # slow / variable apt install step. Keep the tag equal to the @playwright/test version in package-lock.json
+    # (the "Check Playwright version" step fails with a clear message if they drift apart).
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
     strategy:
       fail-fast: true
       matrix:
-        # WebKit is 2-3x slower than Chromium on the runners, so iPhone / iPad are split in two shards each.
-        # The heavy battle tests sit near the end of the file, so shard 1 takes more tests (65:35) to finish
-        # at the same time as shard 2 (PWTEST_SHARD_WEIGHTS; if unsupported, Playwright just splits evenly).
+        # WebKit is 2-3x slower than Chromium on the runners, so iPhone / iPad are split in two shards each
+        # (an even split is balanced inside the Docker image).
         include:
-          - { project: android, browser: chromium, shard: 1/1, weights: '' }
-          - { project: iphone,  browser: webkit,   shard: 1/2, weights: '65:35' }
-          - { project: iphone,  browser: webkit,   shard: 2/2, weights: '65:35' }
-          - { project: ipad,    browser: webkit,   shard: 1/2, weights: '65:35' }
-          - { project: ipad,    browser: webkit,   shard: 2/2, weights: '65:35' }
+          - { project: android, shard: 1/1 }
+          - { project: iphone,  shard: 1/2 }
+          - { project: iphone,  shard: 2/2 }
+          - { project: ipad,    shard: 1/2 }
+          - { project: ipad,    shard: 2/2 }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
       - run: npm ci
-      - name: Get Playwright version
-        id: pw
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        id: pw-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: pw-${{ runner.os }}-${{ steps.pw.outputs.version }}-${{ matrix.browser }}
-      - name: Install browser
-        if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps ${{ matrix.browser }}
-      - name: Install browser system dependencies (browser itself restored from cache)
-        if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps ${{ matrix.browser }}
+      - name: Check Playwright version matches the Docker image
+        run: |
+          v=$(node -p "require('@playwright/test/package.json').version")
+          image="mcr.microsoft.com/playwright:v1.64.1-noble"   # same tag as container.image above
+          echo "@playwright/test $v / $image"
+          case "$image" in *"v$v-"*) ;; *) echo "::error::Update the container image tag to v$v (@playwright/test)"; exit 1;; esac
       - run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }}
         env:
           CI: true
-          PWTEST_SHARD_WEIGHTS: ${{ matrix.weights }}
+          HOME: /root
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@v4

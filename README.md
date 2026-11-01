@@ -5,7 +5,7 @@ Android / iPhone / iPad のブラウザ向け（縦画面・タッチ操作、�
 
 ## 起動
 ```
-npm start            # python3 -m http.server 8080
+npm start            # node tests/serve.mjs 8080 0.0.0.0（依存なしの簡易サーバー）
 # → http://<PCのIP>:8080/ をスマホ/タブレットで開く
 ```
 ビルド不要の静的ファイルのみ（index.html / css / js）。任意のWebサーバに配置すれば動作します。
@@ -53,6 +53,7 @@ npm start            # python3 -m http.server 8080
 
 ## PWA・公開
 - PWA 対応：ホーム画面に追加するとアプリとして全画面で起動（`manifest.json`、アイコンは `icons/`）。`sw.js`（Service Worker）が初回アクセス時にゲーム一式をキャッシュし、オフラインでも遊べる。オンライン時は常に最新版を取得
+- インストール：タイトル画面の「アプリとして追加」ボタン。Android（Chrome）ではインストール確認が開き、iPhone / iPad（Safari は自動で案内しない）では「共有 → ホーム画面に追加 → Web アプリとして開く」の手順を表示する。iPadOS のデスクトップ版 UA（Macintosh + タッチ）も判定する。アプリとして起動中はボタンを出さない
 - GitHub Pages への自動公開：`main` ブランチに push すると GitHub Actions（`.github/workflows/pages.yml`）がテスト（単体＋Playwright）を実行し、成功したらゲームのファイルだけを GitHub Pages に公開。公開のたびに Service Worker のバージョンがコミットに合わせて更新される
 - 初回のみ、GitHub のリポジトリ設定 Settings → Pages → Build and deployment の Source を「GitHub Actions」にする
 

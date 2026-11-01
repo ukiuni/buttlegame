@@ -972,3 +972,26 @@ init();
 if ('serviceWorker' in navigator && window.isSecureContext) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
 }
+
+// PWA install button. Chromium fires beforeinstallprompt; iOS / iPadOS Safari never prompts, so we show
+// the "Share → Add to Home Screen" steps instead. iPadOS reports a Mac user agent, hence the touch check.
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+let installPrompt = null;
+function showInstallGuide() {
+  openModal(() => {
+    const box = $('#modal-content'); box.innerHTML = ''; box.dataset.testid = 'install-guide';
+    const h = el('h3'); h.textContent = t('pwa.title'); box.appendChild(h);
+    const ol = el('ol', 'install-steps');
+    for (const k of ['pwa.step1', 'pwa.step2', 'pwa.step3']) { const li = el('li'); li.textContent = t(k); ol.appendChild(li); }
+    box.appendChild(ol);
+  });
+}
+const btnInstall = $('#btn-install');
+if (!isStandalone() && isIOS()) btnInstall.classList.remove('hidden');
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; btnInstall.classList.remove('hidden'); });
+window.addEventListener('appinstalled', () => { installPrompt = null; btnInstall.classList.add('hidden'); });
+btnInstall.addEventListener('click', async () => {
+  if (installPrompt) { installPrompt.prompt(); await installPrompt.userChoice.catch(() => {}); installPrompt = null; btnInstall.classList.add('hidden'); }
+  else showInstallGuide();
+});

@@ -697,6 +697,37 @@ test('PWA: マニフェストとアイコンが有効で、Service Worker によ
   await context.setOffline(false);
 });
 
+test('PWA: iPhone / iPad では「アプリとして追加」ボタンからホーム画面への追加手順を表示する', async ({ page }, info) => {
+  await page.goto('/index.html');
+  const btn = page.getByTestId('btn-install');
+  if (info.project.name === 'android') {
+    // Chromium shows the button only after beforeinstallprompt (never fired in the test browser)
+    await expect(btn).toBeHidden();
+    return;
+  }
+  await expect(btn).toBeVisible();
+  await expect(btn).toHaveText(JA['pwa.install']);
+  await btn.click();
+  const guide = page.getByTestId('install-guide');
+  await expect(guide).toBeVisible();
+  await expect(guide).toContainText(JA['pwa.step1']);
+  await expect(guide).toContainText(JA['pwa.step2']);
+  await page.click('#btn-modal-close');
+  await expect(guide).toBeHidden();
+});
+
+test('PWA: iPadOS のデスクトップ版 UA（Macintosh + タッチ）でも iPad と判定してボタンを表示する', async ({ browser }) => {
+  const ctx = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+    hasTouch: true, viewport: { width: 820, height: 1180 },
+  });
+  const page = await ctx.newPage();
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: () => 5 }));
+  await page.goto('/index.html');
+  await expect(page.getByTestId('btn-install')).toBeVisible();
+  await ctx.close();
+});
+
 test('魔法：敵も魔法を使い、範囲内の相手の最大HPの割合でダメージを与える', async ({ page }) => {
   await gotoPrep(page, { stage: 2 });
   // stage 2 already has an enemy mage

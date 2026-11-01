@@ -3,6 +3,11 @@ export const LANGS = { ja: '日本語', en: 'English', zh: '中文', ko: '한국
 
 export const STRINGS = {
   ja: {
+    'pwa.install': 'アプリとして追加',
+    'pwa.title': 'ホーム画面に追加してアプリとして遊ぶ',
+    'pwa.step1': 'Safari の共有ボタン（□に↑）をタップします',
+    'pwa.step2': '「ホーム画面に追加」を選び、「Web アプリとして開く」をオンにします',
+    'pwa.step3': '右上の「追加」をタップすると、ホーム画面のアイコンから全画面で遊べます',
     'game.title': 'ピクセル・ブリゲード',
     'game.subtitle': 'ドットの戦士たちを率いてモンスターを倒せ！',
     'title.tap': 'タップしてはじめる',
@@ -80,6 +85,11 @@ export const STRINGS = {
     'result.home': 'ホームへ',
   },
   en: {
+    'pwa.install': 'Install app',
+    'pwa.title': 'Add to Home Screen to play as an app',
+    'pwa.step1': 'Tap the Share button (square with ↑) in Safari',
+    'pwa.step2': 'Choose “Add to Home Screen” and turn on “Open as Web App”',
+    'pwa.step3': 'Tap “Add”. Launch from the Home Screen icon to play full screen',
     'game.title': 'Pixel Brigade',
     'game.subtitle': 'Lead your pixel warriors against the monsters!',
     'title.tap': 'Tap to start',
@@ -157,6 +167,11 @@ export const STRINGS = {
     'result.home': 'Home',
   },
   zh: {
+    'pwa.install': '添加为应用',
+    'pwa.title': '添加到主屏幕，以应用方式游玩',
+    'pwa.step1': '点击 Safari 的分享按钮（方框加↑）',
+    'pwa.step2': '选择“添加到主屏幕”，并开启“作为网页 App 打开”',
+    'pwa.step3': '点击“添加”，之后从主屏幕图标全屏游玩',
     'game.title': '像素军团',
     'game.subtitle': '率领像素勇士击败怪物！',
     'title.tap': '点击开始',
@@ -234,6 +249,11 @@ export const STRINGS = {
     'result.home': '返回主页',
   },
   ko: {
+    'pwa.install': '앱으로 추가',
+    'pwa.title': '홈 화면에 추가하여 앱으로 플레이',
+    'pwa.step1': 'Safari의 공유 버튼(□에 ↑)을 탭합니다',
+    'pwa.step2': '‘홈 화면에 추가’를 선택하고 ‘웹 앱으로 열기’를 켭니다',
+    'pwa.step3': '‘추가’를 탭하면 홈 화면 아이콘에서 전체 화면으로 플레이할 수 있습니다',
     'game.title': '픽셀 브리게이드',
     'game.subtitle': '픽셀 전사들을 이끌고 몬스터를 물리쳐라!',
     'title.tap': '탭하여 시작',
