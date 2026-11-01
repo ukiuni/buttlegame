@@ -1,6 +1,8 @@
 // Game data & pure rules (no DOM) — importable from Node tests.
 
 export const TYPES = ['sword', 'mage', 'archer', 'shield', 'healer', 'lancer', 'thief', 'enchanter', 'summoner', 'warder'];
+// Shop listing order: the defensive classes (tank, ward) sit right under the mage so they are easy to find.
+export const SHOP_ORDER = ['sword', 'mage', 'shield', 'warder', 'archer', 'healer', 'lancer', 'thief', 'enchanter', 'summoner'];
 // Ranks have no upper limit: merging always adds the two ranks together.
 // Enemy ranks are still generated up to ENEMY_MAX_RANK (the stat multiplier covers the rest).
 export const ENEMY_MAX_RANK = 100;

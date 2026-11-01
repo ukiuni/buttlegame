@@ -774,6 +774,16 @@ test('魔法：敵も魔法を使い、範囲内の相手の最大HPの割合で
   }
 });
 
+test('ショップ：魔法使いのすぐ下にタンクと魔法防御師が並ぶ（シールダーは「タンク」）', async ({ page }) => {
+  await gotoHome(page);
+  await page.click('#btn-home-shop');
+  const types = await page.locator('[data-buy-char]').evaluateAll((bs) => bs.map((b) => b.dataset.buyChar));
+  const i = types.indexOf('mage');
+  expect(types.slice(i, i + 3)).toEqual(['mage', 'shield', 'warder']);
+  expect(new Set(types).size).toBe(TYPES.length);
+  await expect(page.locator('.shop-item').nth(i + 1)).toContainText('タンク');
+});
+
 test('魔法防御師：結界の範囲が表示され、範囲内の味方への敵の魔法を無効化する', async ({ page }) => {
   await gotoHome(page);
   await page.evaluate(() => __game.setCoins(1000));
@@ -808,7 +818,7 @@ test('魔法防御師：結界の範囲が表示され、範囲内の味方へ�
   expect(res.magicOnAllies).toBe(0);
 });
 
-test('シールダー：防御力でダメージを軽減し、近くの味方の防御力を上げる（範囲とマークが見える）', async ({ page }) => {
+test('タンク：防御力でダメージを軽減し、近くの味方の防御力を上げる（範囲とマークが見える）', async ({ page }) => {
   await gotoHome(page);
   // detail screen: shows how much damage gets through and the guard bonus
   await page.locator('.roster-card[data-type="shield"]').first().click();

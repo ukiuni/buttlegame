@@ -1,4 +1,4 @@
-import { TYPES, MONSTER_TYPES, ITEMS, SLOTS, RECRUIT_COST, fmtRank, gridFor, SMALL_GRID, itemStats, parseItem,
+import { TYPES, SHOP_ORDER, MONSTER_TYPES, ITEMS, SLOTS, RECRUIT_COST, fmtRank, gridFor, SMALL_GRID, itemStats, parseItem,
   computeStats, enemyWave, cellToField, rewardCoins } from './data.js';
 import { Battle, makeUnit, HIT_TIME } from './battle.js';
 import { Store } from './store.js';
@@ -357,7 +357,7 @@ function openShop(tab = 'recruit') {
     box.appendChild(tabs);
     const list = el('div', 'shop-list'); box.appendChild(list);
     if (cur === 'recruit') {
-      for (const type of TYPES) {
+      for (const type of SHOP_ORDER) {
         const row = el('div', 'shop-item');
         row.appendChild(spriteEl('ally', type));
         const s = computeStats(type, 1);
