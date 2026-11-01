@@ -41,7 +41,8 @@ export const BASE = {
   // (ignores defence; the share grows with rank, weapons and buffs, up to `max`)
   mage:   { hp: 75,  atk: 28, def: 2,  range: 3.2, speed: 0.9,  interval: 1.7, magic: { pct: 0.08, perRank: 0.0006, max: 0.25, radius: 1.25 }, pw: 1.5 },
   archer: { hp: 85,  atk: 19, def: 3,  range: 4.2, speed: 1.0,  interval: 1.15 },
-  shield: { hp: 240, atk: 11, def: 14, range: 1.1, speed: 0.85, interval: 1.3 },
+  // shield: very high defence, and guards nearby allies — they gain a share of the shielder's defence
+  shield: { hp: 240, atk: 11, def: 20, range: 1.1, speed: 0.85, interval: 1.3, guard: { radius: 1.5, share: 0.4 } },
   healer: { hp: 85,  atk: 9,  def: 3,  range: 3.0, speed: 0.95, interval: 1.8, heal: 18 },
   // ---- extra ally classes ----
   // lancer: long wind-up, then charges a fixed distance in a straight line (even if it misses),
@@ -55,7 +56,7 @@ export const BASE = {
   summoner:  { hp: 80,  atk: 10, def: 3, range: 3.0, speed: 0.85, interval: 1.8, summon: 'dragon', chant: 4.0, magic: { pct: 0.03, perRank: 0.0003, max: 0.1, radius: 0.9 } },
   // warder: an always-on barrier around itself — magic that would hit an ally inside it is nullified
   // (radius 1.6 cells, +0.004 per rank, up to 2.6)
-  warder:    { hp: 110, atk: 10, def: 6, range: 2.4, speed: 0.9,  interval: 1.6, ward: { radius: 1.6, perRank: 0.004, max: 2.6 } },
+  warder:    { hp: 110, atk: 10, def: 6, range: 2.4, speed: 0.9,  interval: 1.6, ward: { radius: 1.6, perRank: 0.004, max: 2.6 }, wave: 0.35 },
   // ---- monster-only types (each has its own attack style) ----
   // bat: fast flyer (passes over other units) that ignores the front line and dives at the weakest (lowest HP) target
   bat:      { hp: 70,  atk: 16, def: 2,  range: 1.0, speed: 2.4,  interval: 0.8, assassin: true, fly: true, pw: 1.1 },
@@ -72,7 +73,8 @@ export const BASE = {
 };
 
 // Monster types and the stage where each first appears.
-export const MONSTER_UNLOCK = { sword: 1, archer: 1, mage: 1, shield: 1, healer: 1, bat: 3, slime: 6, golem: 10, dragon: 15, lich: 20 };
+// warder = Ward Imp: the same barrier as our 魔法防御師 (nullifies OUR magic on monsters inside it)
+export const MONSTER_UNLOCK = { sword: 1, archer: 1, mage: 1, shield: 1, healer: 1, bat: 3, slime: 6, golem: 10, dragon: 15, lich: 20, warder: 25 };
 export const MONSTER_TYPES = Object.keys(MONSTER_UNLOCK);
 const MELEE_FRONT = new Set(['sword', 'shield', 'golem', 'slime', 'bat']);
 
@@ -88,6 +90,26 @@ export const ITEMS = {
   life_amulet:   { slot: 'accessory', cost: 80,  hp: 50 },
 };
 
+// ---- equipment levels ----
+// An item is stored as a key: "bronze_sword" (Lv1) or "bronze_sword+3" (Lv3). Merging identical items adds
+// their levels (like characters). ATK / HP / DEF grow linearly with the level; haste grows with diminishing
+// returns towards HASTE_MAX.
+export const HASTE_MAX = 0.5;
+export function parseItem(key) {
+  const m = /^([a-z_]+)(?:\+(\d+))?$/.exec(key || '');
+  return m && ITEMS[m[1]] ? { id: m[1], lv: m[2] ? +m[2] : 1 } : null;
+}
+export function itemKey(id, lv = 1) { return lv > 1 ? `${id}+${lv}` : id; }
+export function itemStats(key) {
+  const p = parseItem(key); if (!p) return null;
+  const it = ITEMS[p.id], lv = p.lv;
+  return {
+    id: p.id, lv, slot: it.slot, cost: it.cost,
+    atk: (it.atk || 0) * lv, hp: (it.hp || 0) * lv, def: (it.def || 0) * lv,
+    haste: it.haste ? +(it.haste + (HASTE_MAX - it.haste) * (1 - 1 / lv)).toFixed(3) : 0,
+  };
+}
+
 export function rankMult(rank) { return 1 + 0.3 * (rank - 1); }
 
 export function computeStats(type, rank = 1, equip = {}, mult = 1) {
@@ -96,12 +118,14 @@ export function computeStats(type, rank = 1, equip = {}, mult = 1) {
   const s = {
     maxHp: Math.round(b.hp * rm),
     atk: Math.round(b.atk * rm),
-    def: Math.round((b.def + (rank - 1)) * mult),
+    // defence grows with rank like HP / attack, so it matters at every stage (see Battle.applyDamage)
+    def: Math.round(b.def * rm),
     range: b.range,
     speed: b.speed,
     interval: b.interval,
     magic: b.magic ? { pct: +Math.min(b.magic.max, b.magic.pct + b.magic.perRank * (rank - 1)).toFixed(4), radius: b.magic.radius } : null,
     heal: b.heal ? Math.round(b.heal * rm) : 0,
+    guard: b.guard ? { ...b.guard } : null,
     ward: b.ward ? { radius: +Math.min(b.ward.max, b.ward.radius + b.ward.perRank * (rank - 1)).toFixed(3) } : null,
     assassin: !!b.assassin, fly: !!b.fly, poison: b.poison || 0, slam: b.slam || 0, stun: b.stun || 0,
     pierce: b.pierce || 0, summon: b.summon || null,
@@ -109,7 +133,7 @@ export function computeStats(type, rank = 1, equip = {}, mult = 1) {
     buff: b.buff ? { ...b.buff, amount: +Math.min(BUFF_MAX, b.buff.base + b.buff.perRank * (rank - 1)).toFixed(3) } : null,
   };
   for (const slot of SLOTS) {
-    const it = equip && equip[slot] ? ITEMS[equip[slot]] : null;
+    const it = equip && equip[slot] ? itemStats(equip[slot]) : null;
     if (!it) continue;
     if (it.atk) { s.atk += it.atk; if (s.heal) s.heal += Math.round(it.atk * 0.8); }
     if (it.hp) s.maxHp += it.hp;
@@ -166,7 +190,8 @@ function enemyComposition(stage) {
   let ranged = 0;
   // enemies use magic too: from stage 2 every wave has exactly this many mages (about 1 in 8 monsters)
   const mageQuota = stage >= 2 ? Math.max(1, Math.round(count / 8)) : 0;
-  const allowed = (t) => (counts[t] || 0) < (t === 'lich' ? 2 : t === 'mage' ? mageQuota : Math.max(2, Math.ceil(count / 4)))
+  const cap = (t) => (t === 'lich' ? 2 : t === 'mage' ? mageQuota : t === 'warder' ? (count >= 10 ? 2 : 1) : Math.max(2, Math.ceil(count / 4)));
+  const allowed = (t) => (counts[t] || 0) < cap(t)
     && (MELEE_FRONT.has(t) || ranged < Math.floor(count / 2));
   const pick = () => {
     const opts = pool.filter(allowed);
@@ -197,13 +222,15 @@ function enemyComposition(stage) {
 
 // Rough fighting strength: total HP x total damage per second
 // (special attack styles count via the per-type `pw` factor).
+// `wave` = support monsters that strengthen the whole wave (e.g. the Ward Imp's barrier): +share each.
 export function wavePower(units, mult) {
-  let hp = 0, dps = 0;
+  let hp = 0, dps = 0, support = 1;
   for (const u of units) {
     const x = computeStats(u.type, u.rank, {}, mult);
     hp += x.maxHp; dps += (x.atk / x.interval) * (BASE[u.type].pw || 1);
+    support += BASE[u.type].wave || 0;
   }
-  return hp * dps;
+  return hp * dps * support;
 }
 
 const BASE_POWER = wavePower([{ type: 'sword', rank: 1 }, { type: 'archer', rank: 1 }, { type: 'shield', rank: 1 }], BASE_MULT);

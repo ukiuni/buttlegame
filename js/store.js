@@ -1,5 +1,5 @@
 // Persistent player state.
-import { ITEMS, RECRUIT_COST, SMALL_GRID, BIG_GRID, gridFor, centerCols, mergedRank, rewardCoins } from './data.js';
+import { ITEMS, RECRUIT_COST, itemStats, parseItem, itemKey, computeStats, SMALL_GRID, BIG_GRID, gridFor, centerCols, mergedRank, rewardCoins } from './data.js';
 
 // Classes that fight up close go to the front rows when auto-arranging.
 export const MELEE = new Set(['sword', 'shield', 'lancer', 'thief']);
@@ -72,22 +72,44 @@ export class Store {
   // ---- lock (locked characters are never used up by bulk merge / auto-arrange / merging) ----
   setLocked(charId, on) { const c = this.char(charId); if (c) { if (on) c.locked = true; else delete c.locked; this.save(); } }
 
-  buyItem(itemId) {
+  buyItem(itemId) { return this.buyItems(itemId, 1) === 1; }
+  // Buy up to n copies (as many as the coins allow). Returns how many were bought.
+  buyItems(itemId, n) {
     const it = ITEMS[itemId];
-    if (!it || this.data.coins < it.cost) return false;
-    this.data.coins -= it.cost;
-    this.data.inventory[itemId] = (this.data.inventory[itemId] || 0) + 1;
+    if (!it) return 0;
+    const k = Math.max(0, Math.min(n, this.maxBuyable(itemId)));
+    if (!k) return 0;
+    this.data.coins -= it.cost * k;
+    this.data.inventory[itemId] = (this.data.inventory[itemId] || 0) + k;
     this.save();
-    return true;
+    return k;
+  }
+  maxBuyable(itemId) { const it = ITEMS[itemId]; return it ? Math.floor(this.data.coins / it.cost) : 0; }
+
+  // ---- equipment merge: all unequipped copies of an item become one item whose level is the sum ----
+  itemGroup(itemId) {
+    const keys = Object.keys(this.data.inventory).filter((k) => this.data.inventory[k] > 0 && parseItem(k)?.id === itemId);
+    const count = keys.reduce((a, k) => a + this.data.inventory[k], 0);
+    const lv = keys.reduce((a, k) => a + parseItem(k).lv * this.data.inventory[k], 0);
+    return { keys, count, lv };
+  }
+  mergeItems(itemId) {
+    const g = this.itemGroup(itemId);
+    if (g.count < 2) return null;
+    for (const k of g.keys) delete this.data.inventory[k];
+    const key = itemKey(itemId, g.lv);
+    this.data.inventory[key] = 1;
+    this.save();
+    return { key, lv: g.lv, count: g.count };
   }
 
-  equip(charId, itemId) {
-    const c = this.char(charId); const it = ITEMS[itemId];
-    if (!c || !it || !(this.data.inventory[itemId] > 0)) return false;
+  equip(charId, key) {
+    const c = this.char(charId); const it = itemStats(key);
+    if (!c || !it || !(this.data.inventory[key] > 0)) return false;
     this.unequip(charId, it.slot, false);
-    this.data.inventory[itemId]--;
-    if (!this.data.inventory[itemId]) delete this.data.inventory[itemId];
-    c.equip[it.slot] = itemId;
+    this.data.inventory[key]--;
+    if (!this.data.inventory[key]) delete this.data.inventory[key];
+    c.equip[it.slot] = key;
     this.save();
     return true;
   }
@@ -233,7 +255,56 @@ export class Store {
       return { targetId, type: tg.type, cell: cellOf(targetId), from: tg.rank, to: plannedRank.get(targetId), sourceIds };
     });
     const leftover = bench.length - places.length - merges.reduce((a, m) => a + m.sourceIds.length, 0);
-    return { mode, places, merges, leftover };
+    const equips = this.planEquip([...targets], plannedRank, merges);
+    return { mode, places, merges, leftover, equips };
+  }
+
+  // Equipment for the units on the field (after the planned merges). Items pool = spare items in the
+  // inventory + items freed by the merges + what those units already wear. For each slot, greedily give the
+  // item that adds the most fighting strength (damage per second x effective HP) to the unit that gains most.
+  planEquip(units, plannedRank, merges = []) {
+    const inv = { ...this.data.inventory };
+    const consumed = new Set(merges.flatMap((m) => m.sourceIds));
+    for (const id of consumed) for (const k of Object.values(this.char(id).equip)) inv[k] = (inv[k] || 0) + 1;
+    const power = (c, equip) => {
+      const rank = plannedRank.get(c.id) ?? c.rank;
+      const s = computeStats(c.type, rank, equip);
+      const ref = computeStats('sword', rank).atk;
+      const dps = ((s.heal || 0) + s.atk) / s.interval;
+      return dps * s.maxHp * (1 + s.def / ref);
+    };
+    const plan = new Map(units.map((c) => [c.id, { ...c.equip }]));
+    const SLOT_NAMES = [...new Set(Object.values(ITEMS).map((it) => it.slot))];
+    for (const slot of SLOT_NAMES) {
+      // pool: spare items + what the field units wear in this slot (they may be handed to someone stronger)
+      const pool = [];
+      for (const [k, n] of Object.entries(inv)) if (itemStats(k)?.slot === slot) for (let i = 0; i < n; i++) pool.push(k);
+      for (const c of units) if (c.equip[slot]) pool.push(c.equip[slot]);
+      pool.sort();   // identical items next to each other (each is evaluated once)
+      for (const c of units) delete plan.get(c.id)[slot];
+      const open = new Set(units.map((c) => c.id));
+      while (pool.length && open.size) {
+        let best = null;
+        for (const id of open) {
+          const c = units.find((u) => u.id === id); const base = power(c, plan.get(id));
+          for (let i = 0; i < pool.length; i++) {
+            if (i && pool[i] === pool[i - 1]) continue;
+            const gain = power(c, { ...plan.get(id), [slot]: pool[i] }) - base;
+            if (gain > 0 && (!best || gain > best.gain)) best = { id, i, gain };
+          }
+        }
+        if (!best) break;
+        plan.get(best.id)[slot] = pool[best.i]; pool.splice(best.i, 1); open.delete(best.id);
+      }
+    }
+    const equips = [];
+    for (const c of units) {
+      for (const slot of SLOT_NAMES) {
+        const to = plan.get(c.id)[slot] || null, from = c.equip[slot] || null;
+        if (to !== from) equips.push({ charId: c.id, type: c.type, rank: plannedRank.get(c.id) ?? c.rank, slot, from, to });
+      }
+    }
+    return equips;
   }
   applyPlan(plan) {
     for (const p of plan.places) this.formation[p.id] = p.cell;
@@ -247,6 +318,9 @@ export class Store {
         this.forgetChar(s.id);
       }
     }
+    // equipment: take off everything that changes first, then put the new items on
+    for (const e of plan.equips || []) this.unequip(e.charId, e.slot, false);
+    for (const e of plan.equips || []) if (e.to) this.equip(e.charId, e.to);
     this.save();
   }
 

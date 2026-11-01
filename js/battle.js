@@ -17,7 +17,7 @@ export function makeUnit({ team, type, rank, equip, cell, mult = 1, charId = nul
     hp: st.maxHp, maxHp: st.maxHp, atk: st.atk, def: st.def,
     range: st.range, speed: st.speed, interval: st.interval, magic: st.magic, heal: st.heal,
     atk0: computeStats(type, rank, {}, mult).atk,   // attack without equipment (weapons scale magic)
-    prey: st.prey, charge: st.charge, chant: st.chant, buff: st.buff, ward: st.ward,
+    prey: st.prey, charge: st.charge, chant: st.chant, buff: st.buff, ward: st.ward, guard: st.guard,
     buffUntil: 0, buffAmt: 0, chargeLeft: 0, chargeDx: 0, chargeDy: 0, chargeHit: null,
     assassin: st.assassin, fly: st.fly, poison: st.poison, slam: st.slam, stun: st.stun, pierce: st.pierce, summon: st.summon,
     mult, casts: 0, summoner: null,
@@ -92,12 +92,27 @@ export class Battle {
     this.events.push({ type: 'buff', uid: u.uid });
   }
 
+  // The strongest shielder guarding `u` (same team, alive, within its guard radius), or null.
+  guardOf(u) {
+    let best = null;
+    for (const w of this.units) {
+      if (!w.guard || w === u || w.team !== u.team || !this.alive(w) || this.dist(w, u) > w.guard.radius) continue;
+      if (!best || w.def * w.guard.share > best.def * best.guard.share) best = w;
+    }
+    return best;
+  }
+  // Defence including a nearby shielder's guard (+share of the shielder's defence; does not stack).
+  defOf(u) { const g = this.guardOf(u); return u.def + (g ? Math.round(g.def * g.guard.share) : 0); }
+
   // Damage only applies between opposing teams. Returns damage dealt.
+  // Defence reduces damage proportionally: dmg = power * power / (power + def)
+  // (def = power halves the damage), so it keeps working however big the numbers get.
   applyDamage(attacker, target, power) {
     if (!attacker || !target || attacker.team === target.team) return 0;
     if (!this.alive(target)) return 0;
     const base = power != null ? power : this.atkOf(attacker);
-    const dmg = Math.max(1, Math.round(base * (0.9 + this.rnd() * 0.2) - target.def * 0.5));
+    const raw = base * (0.9 + this.rnd() * 0.2);
+    const dmg = Math.max(1, Math.round((raw * raw) / (raw + this.defOf(target))));
     target.hp = Math.max(0, target.hp - dmg);
     this.events.push({ type: 'damage', uid: target.uid, amount: dmg, from: attacker.uid });
     if (this.trace) this.trace.push({ t: this.time, kind: 'damage', from: attacker.uid, to: target.uid, amount: dmg, hp: target.hp });

@@ -82,6 +82,7 @@ export const CHARS = {
   mon_slime:   { custom: 'slime', body: '#8ad040', bodyS: '#4c8a20', light: '#d8f8a0', eye: '#20142a', drip: '#b060e0' },
   mon_golem:   { custom: 'golem', stone: '#8a8a7a', stoneS: '#5a5a4e', stoneL: '#b4b4a2', moss: '#5a8a3a', eye: '#40e0ff' },
   mon_dragon:  { custom: 'dragon', body: '#d04030', bodyS: '#902018', belly: '#f0c060', wing: '#b03848', wingS: '#601828', eye: '#ffe040', horn: '#f0e0c0' },
+  mon_warder:  { skin: '#5a78e0', skinS: '#3448a0', eye: '#ffe040', head: 'goblin', body: 'robe', tunic: '#7a2a5a', tunicS: '#4c1438', belt: '#ff60c0', boot: '#3448a0', weapon: 'staff', orb: '#ff60e0' },
   mon_healer:  { skin: '#f0dcc0', skinS: '#c0a080', eye: '#20142a', head: 'mushroom', cap: '#d83838', capS: '#982020', body: 'robe', tunic: '#80b848', tunicS: '#507828', belt: '#f0dcc0', boot: '#c0a080', weapon: 'rod', orb: '#ff90e0' },
 };
 

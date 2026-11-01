@@ -193,7 +193,7 @@ test('enchanter raises the attack of nearby allies', () => {
   let t = 0; while (!(sw.buffUntil > bt.time) && t++ < 600) bt.step(1 / 60);
   assert.ok(sw.buffUntil > bt.time, 'buffed');
   assert.equal(bt.atkOf(sw), Math.round(sw.atk * 1.2));
-  const e = makeUnit({ team: 'enemy', type: 'sword', rank: 1, cell: 0 }); e.def = 0;
+  const e = makeUnit({ team: 'enemy', type: 'sword', rank: 1, cell: 0 }); e.def = 0; e.x = 40;   // away from any shielder's guard
   bt.rnd = () => 0.5; assert.equal(bt.applyDamage(sw, e), Math.round(sw.atk * 1.2));
   const hi = makeUnit({ team: 'ally', type: 'enchanter', rank: 100, cell: 12 });
   assert.ok(hi.buff.amount > 0.45, 'stronger buff at higher rank');
@@ -392,4 +392,119 @@ test('warder barrier grows with rank (capped); warder is recruitable', () => {
   assert.ok(r(100) > r(1)); assert.equal(r(100000), 2.6);
   const s = new Store(mem()); s.data.coins = 1000;
   const w = s.recruit('warder'); assert.equal(w.type, 'warder');
+});
+
+// ---------- defence & shielder guard ----------
+test('defence reduces damage proportionally (atk^2 / (atk + def)) and grows with rank', () => {
+  const sw = makeUnit({ team: 'enemy', type: 'sword', rank: 1, cell: 2 });
+  const bt = new Battle({ allies: [], enemies: [sw] }); bt.rnd = () => 0.5;   // no random spread
+  const hit = (target) => { bt.units.push(target); target.hp = target.maxHp; return bt.applyDamage(sw, target); };
+  const lone = (type, rank = 1) => { const u = makeUnit({ team: 'ally', type, rank, cell: 12 }); u.x = 40; return u; };   // far from any shielder
+  const sh = lone('shield'), mg = lone('mage'); mg.x = 80;
+  assert.equal(hit(sh), Math.round((sw.atk * sw.atk) / (sw.atk + sh.def)));
+  assert.ok(hit(sh) < hit(mg) * 0.7, 'the shielder takes far less damage than a mage');
+  // defence scales with rank, so a shielder stays tough against stronger enemies
+  assert.equal(makeUnit({ team: 'ally', type: 'shield', rank: 100, cell: 12 }).def, Math.round(20 * (1 + 0.3 * 99)));
+  const big = makeUnit({ team: 'enemy', type: 'sword', rank: 100, cell: 2 }), bigSh = lone('shield', 100);
+  const b2 = new Battle({ allies: [bigSh], enemies: [big] }); b2.rnd = () => 0.5;
+  const ratioHigh = b2.applyDamage(big, bigSh) / big.atk, ratioLow = hit(sh) / sw.atk;
+  assert.ok(Math.abs(ratioHigh - ratioLow) < 0.05, 'same share of damage gets through at rank 1 and rank 100');
+});
+
+test('shielder guards nearby allies: +40% of its defence, strongest only, own team only', () => {
+  const sh = makeUnit({ team: 'ally', type: 'shield', rank: 10, cell: 12 });
+  const near = makeUnit({ team: 'ally', type: 'archer', rank: 1, cell: 12 }); near.x = sh.x + 1; near.y = sh.y;   // radius 1.5
+  const far = makeUnit({ team: 'ally', type: 'archer', rank: 1, cell: 12 }); far.x = sh.x + 2; far.y = sh.y;
+  const foe = makeUnit({ team: 'enemy', type: 'sword', rank: 1, cell: 2 }); foe.x = sh.x - 1; foe.y = sh.y;
+  const weak = makeUnit({ team: 'ally', type: 'shield', rank: 1, cell: 12 }); weak.x = sh.x + 0.5; weak.y = sh.y + 1;   // covers sh & near, not far
+  const bt = new Battle({ allies: [sh, near, far, weak], enemies: [foe] });
+  const bonus = Math.round(sh.def * 0.4);
+  assert.equal(bt.defOf(near), near.def + bonus, 'guarded by the stronger shielder (no stacking)');
+  assert.equal(bt.defOf(far), far.def, 'outside the guard');
+  assert.equal(bt.defOf(foe), foe.def, 'enemies are not guarded by our shielder');
+  assert.equal(bt.guardOf(sh), weak, 'a shielder can be guarded by another shielder, never by itself');
+  // guarded allies take less damage; the guard disappears with the shielder
+  bt.rnd = () => 0.5;
+  const dmgGuarded = bt.applyDamage(foe, near); near.hp = near.maxHp;
+  bt.kill(sh); bt.kill(weak);
+  assert.ok(bt.applyDamage(foe, near) > dmgGuarded);
+});
+
+// ---------- equipment: bulk buy, merge (levels add up), auto-equip ----------
+test('items: levels scale stats; buying many; merging adds levels (mixed levels too)', async () => {
+  const { itemStats, computeStats } = await import('../../js/data.js');
+  assert.equal(itemStats('bronze_sword').atk, 5); assert.equal(itemStats('bronze_sword+3').atk, 15);
+  assert.equal(itemStats('mythril_armor+2').hp, 160); assert.equal(itemStats('mythril_armor+2').def, 12);
+  assert.ok(itemStats('speed_ring+4').haste > itemStats('speed_ring').haste && itemStats('speed_ring+999').haste <= 0.5);
+  assert.equal(computeStats('sword', 1, { weapon: 'bronze_sword+3' }).atk, computeStats('sword', 1).atk + 15);
+  const s = new Store(mem());
+  s.data.coins = 450;
+  assert.equal(s.buyItems('bronze_sword', 10), 10); assert.equal(s.data.coins, 50);
+  assert.equal(s.buyItems('bronze_sword', 10), 1, 'only as many as the coins allow');
+  s.data.inventory['bronze_sword+3'] = 1;                // a previously merged one
+  const sw = s.data.roster.find((c) => c.type === 'sword');
+  assert.ok(s.equip(sw.id, 'bronze_sword'));             // equipped copies are not merged
+  const r = s.mergeItems('bronze_sword');
+  assert.deepEqual(r, { key: 'bronze_sword+13', lv: 13, count: 11 });   // 10 x Lv1 + Lv3
+  assert.deepEqual(s.data.inventory, { 'bronze_sword+13': 1 });
+  assert.equal(s.mergeItems('bronze_sword'), null, 'nothing left to merge');
+  assert.ok(s.equip(sw.id, 'bronze_sword+13'));
+  assert.equal(sw.equip.weapon, 'bronze_sword+13'); assert.equal(s.data.inventory.bronze_sword, 1, 'old one back in the bag');
+});
+
+test('auto arrange also equips spare items where they add the most, conserving every item', () => {
+  const s = new Store(mem());
+  s.data.coins = 100000; s.recruitMany('sword', 3);
+  s.data.inventory = { 'mythril_sword+4': 1, bronze_sword: 2, 'mythril_armor+2': 1, speed_ring: 1, life_amulet: 1 };
+  const benchSword = s.data.roster.find((c) => c.type === 'sword' && s.cellOf(c.id) == null);
+  s.data.inventory.leather_armor = 1; s.equip(benchSword.id, 'leather_armor');   // freed when it gets merged
+  const count = () => {
+    const n = {}; for (const [k, v] of Object.entries(s.data.inventory)) n[k] = (n[k] || 0) + v;
+    for (const c of s.data.roster) for (const k of Object.values(c.equip)) n[k] = (n[k] || 0) + 1;
+    return n;
+  };
+  const before = count();
+  const plan = s.planAuto('front');
+  assert.ok(plan.equips.length > 0);
+  s.applyPlan(plan);
+  assert.deepEqual(count(), before, 'no item lost or duplicated');
+  const placed = Object.keys(s.formation).map((id) => s.char(+id));
+  const worn = placed.flatMap((c) => Object.values(c.equip));
+  assert.ok(worn.includes('mythril_sword+4') && worn.includes('mythril_armor+2'), 'the best items are used');
+  // the strongest weapon goes to a damage dealer, not to the healer
+  const holder = placed.find((c) => c.equip.weapon === 'mythril_sword+4');
+  assert.notEqual(holder.type, 'healer');
+  // fewer weapons than units on the field: every weapon ends up being worn
+  assert.equal(placed.filter((c) => c.equip.weapon).length, 3);
+  assert.ok(!Object.keys(s.data.inventory).some((k) => k.includes('sword')), 'no weapon left in the bag');
+  // planning again finds nothing better
+  assert.equal(s.planAuto('front').equips.length, 0);
+});
+
+// ---------- Ward Imp (monster warder): nullifies OUR magic on monsters inside its barrier ----------
+test('Ward Imp appears from stage 25 (max 1, or 2 in big waves) and blocks our magic', () => {
+  assert.equal(MONSTER_UNLOCK.warder, 25);
+  for (let st = 1; st < 25; st++) assert.ok(!enemyWave(st).units.some((u) => u.type === 'warder'), `none before 25 (stage ${st})`);
+  assert.ok(enemyWave(25).units.some((u) => u.type === 'warder'), 'introduced at stage 25');
+  for (let st = 25; st <= 140; st++) {
+    const w = enemyWave(st).units; const n = w.filter((u) => u.type === 'warder').length;
+    assert.ok(n <= (w.length >= 10 ? 2 : 1), `cap at stage ${st}`);
+  }
+  const imp = makeUnit({ team: 'enemy', type: 'warder', rank: 1, cell: 7 });
+  const foe = makeUnit({ team: 'enemy', type: 'sword', rank: 1, cell: 7 }); foe.x = imp.x + 1;
+  const ours = makeUnit({ team: 'ally', type: 'mage', rank: 1, cell: 12 });
+  const bt = new Battle({ allies: [ours], enemies: [imp, foe] });
+  bt.applyMagic(ours, foe);
+  assert.equal(foe.hp, foe.maxHp); assert.equal(imp.hp, imp.maxHp);
+  assert.ok(bt.events.some((e) => e.type === 'nullify' && e.warder === imp.uid));
+  // physical attacks still work
+  assert.ok(bt.applyDamage(ours, foe, 50) > 0);
+});
+
+test('wave strength counts the Ward Imp as support for the whole wave', () => {
+  const base = [{ type: 'sword', rank: 5 }, { type: 'archer', rank: 5 }];
+  const withImp = [...base, { type: 'warder', rank: 5 }];
+  const withSword = [...base, { type: 'sword', rank: 5 }];
+  assert.ok(wavePower(withImp, 1) / wavePower(base, 1) > 1.35, 'counts more than its own small stats');
+  assert.ok(wavePower(withImp, 1) < wavePower(withSword, 1) * 1.5);
 });

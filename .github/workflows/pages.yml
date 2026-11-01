@@ -1,5 +1,5 @@
 # Test the game, then publish it to GitHub Pages on every push to main.
-# The browser tests run as 3 parallel jobs (one per device), each installing only the browser it needs.
+# The browser tests run as 5 parallel jobs (Android, iPhone x2, iPad x2), each installing only the browser it needs.
 name: Deploy to GitHub Pages
 
 on:
@@ -31,13 +31,15 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        # WebKit is 2-3x slower than Chromium on the runners, so iPhone / iPad are split in two shards each.
+        # The heavy battle tests sit near the end of the file, so shard 1 takes more tests (65:35) to finish
+        # at the same time as shard 2 (PWTEST_SHARD_WEIGHTS; if unsupported, Playwright just splits evenly).
         include:
-          - project: android
-            browser: chromium
-          - project: iphone
-            browser: webkit
-          - project: ipad
-            browser: webkit
+          - { project: android, browser: chromium, shard: 1/1, weights: '' }
+          - { project: iphone,  browser: webkit,   shard: 1/2, weights: '65:35' }
+          - { project: iphone,  browser: webkit,   shard: 2/2, weights: '65:35' }
+          - { project: ipad,    browser: webkit,   shard: 1/2, weights: '65:35' }
+          - { project: ipad,    browser: webkit,   shard: 2/2, weights: '65:35' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -60,14 +62,15 @@ jobs:
       - name: Install browser system dependencies (browser itself restored from cache)
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps ${{ matrix.browser }}
-      - run: npx playwright test --project=${{ matrix.project }}
+      - run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }}
         env:
           CI: true
+          PWTEST_SHARD_WEIGHTS: ${{ matrix.weights }}
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results-${{ matrix.project }}
+          name: playwright-results-${{ matrix.project }}-${{ strategy.job-index }}
           path: test-results/
           retention-days: 7
 

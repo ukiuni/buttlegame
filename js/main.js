@@ -1,4 +1,4 @@
-import { TYPES, MONSTER_TYPES, ITEMS, SLOTS, RECRUIT_COST, fmtRank, gridFor, SMALL_GRID,
+import { TYPES, MONSTER_TYPES, ITEMS, SLOTS, RECRUIT_COST, fmtRank, gridFor, SMALL_GRID, itemStats, parseItem,
   computeStats, enemyWave, cellToField, rewardCoins } from './data.js';
 import { Battle, makeUnit, HIT_TIME } from './battle.js';
 import { Store } from './store.js';
@@ -150,15 +150,24 @@ function openAutoArrange() {
     box.appendChild(seg);
     const plan = store.planAuto(mode);
     const mergedN = plan.merges.reduce((a, m) => a + m.sourceIds.length, 0);
-    const sum = el('p', 'note', { 'data-testid': 'auto-summary' }); sum.textContent = t('auto.summary', { p: plan.places.length, m: mergedN }); box.appendChild(sum);
+    const sum = el('p', 'note', { 'data-testid': 'auto-summary' });
+    sum.textContent = t('auto.summary', { p: plan.places.length, m: mergedN }) + (plan.equips.length ? ' ' + t('auto.summaryEquip', { e: plan.equips.filter((x) => x.to).length }) : '');
+    box.appendChild(sum);
     const ul = el('ul', 'plan-list', { 'data-testid': 'auto-plan' });
     for (const p of plan.places) { const li = el('li'); li.textContent = t('auto.place', { name: charName(p.type), rank: p.rank, row: rowName(p.cell) }); ul.appendChild(li); }
     for (const m of plan.merges) { const li = el('li'); li.textContent = t('auto.merge', { name: charName(m.type), row: rowName(m.cell), from: m.from, to: m.to, n: m.sourceIds.length }); ul.appendChild(li); }
-    if (!plan.places.length && !plan.merges.length) { const li = el('li'); li.textContent = t('auto.nothing'); ul.appendChild(li); }
+    for (const e of plan.equips) {
+      const li = el('li', 'plan-equip');
+      li.textContent = e.to ? t('auto.equip', { name: charName(e.type), rank: e.rank, item: itemName(e.to) })
+        : t('auto.unequip', { name: charName(e.type), rank: e.rank, item: itemName(e.from) });
+      ul.appendChild(li);
+    }
+    const nothing = !plan.places.length && !plan.merges.length && !plan.equips.length;
+    if (nothing) { const li = el('li'); li.textContent = t('auto.nothing'); ul.appendChild(li); }
     box.appendChild(ul);
     if (plan.leftover > 0) { const p = el('p', 'note'); p.textContent = t('auto.left', { n: plan.leftover }); box.appendChild(p); }
     const ok = el('button', 'btn primary', { 'data-testid': 'auto-confirm' }); ok.textContent = t('auto.confirm');
-    ok.disabled = !plan.places.length && !plan.merges.length;
+    ok.disabled = nothing;
     ok.addEventListener('click', () => {
       const snap = store.snapshot();
       store.applyPlan(plan);
@@ -236,24 +245,41 @@ function renderHome() {
     const rk = el('span', 'rank-badge'); rk.textContent = `★${fmtRank(c.rank)}`; card.appendChild(rk);
     if (c.locked) { const lk = el('span', 'lock-mark'); lk.textContent = '🔒'; card.appendChild(lk); }
     const eq = el('div', 'equip-icons');
-    for (const slot of SLOTS) if (c.equip[slot]) { const im = el('img'); im.src = icon(slot); im.title = t('item.' + c.equip[slot]); eq.appendChild(im); }
+    for (const slot of SLOTS) if (c.equip[slot]) { const im = el('img'); im.src = icon(slot); im.title = itemName(c.equip[slot]); eq.appendChild(im); }
     card.appendChild(eq);
     card.addEventListener('click', () => openCharDetail(c.id));
     roster.appendChild(card);
   }
   const inv = $('#inventory'); inv.innerHTML = '';
-  const entries = Object.entries(store.data.inventory).filter(([, n]) => n > 0);
+  const entries = Object.entries(store.data.inventory).filter(([k, n]) => n > 0 && parseItem(k))
+    .sort(([a], [b]) => Object.keys(ITEMS).indexOf(parseItem(a).id) - Object.keys(ITEMS).indexOf(parseItem(b).id) || parseItem(b).lv - parseItem(a).lv);
   if (!entries.length) { const p = el('p', 'hint'); p.textContent = t('home.noItems'); inv.appendChild(p); }
-  for (const [id, n] of entries) {
-    const d = el('div', 'inv-item', { 'data-item': id });
+  const shownMerge = new Set();
+  for (const [key, n] of entries) {
+    const { id } = parseItem(key);
+    const d = el('div', 'inv-item', { 'data-item': key });
     const im = el('img'); im.src = icon(ITEMS[id].slot); d.appendChild(im);
-    d.appendChild(document.createTextNode(`${t('item.' + id)} ×${n}`));
+    const tx = el('span', 'inv-name'); tx.textContent = `${itemName(key)} ×${n}`; tx.title = itemDesc(key); d.appendChild(tx);
+    // merge: all unequipped copies of this item into one (levels add up); shown once per item kind
+    const g = store.itemGroup(id);
+    if (g.count >= 2 && !shownMerge.has(id)) {
+      shownMerge.add(id);
+      const mb = el('button', 'btn small primary', { 'data-merge-item': id });
+      mb.textContent = t('item.merge', { n: g.count, lv: g.lv });
+      mb.addEventListener('click', () => {
+        const snap = store.snapshot(); const r = store.mergeItems(id);
+        if (r) { renderHome(); showUndo(t('item.merged', { name: itemName(r.key), n: r.count }), snap); }
+      });
+      d.appendChild(mb);
+    }
     inv.appendChild(d);
   }
 }
 
-function itemDesc(id) {
-  const it = ITEMS[id]; const parts = [];
+// "Bronze Sword", "Bronze Sword +3"
+function itemName(key) { const p = parseItem(key); return p ? t('item.' + p.id) + (p.lv > 1 ? ` +${p.lv}` : '') : ''; }
+function itemDesc(key) {
+  const it = itemStats(key); const parts = [];
   if (it.atk) parts.push(`${t('stat.atk')}+${it.atk}`);
   if (it.hp) parts.push(`${t('stat.hp')}+${it.hp}`);
   if (it.def) parts.push(`${t('stat.def')}+${it.def}`);
@@ -280,6 +306,10 @@ function openCharDetail(id) {
     const rows = [['stat.hp', s.maxHp], ['stat.atk', s.atk], ['stat.def', s.def], ['stat.range', s.range], ['stat.interval', s.interval + 's']];
     if (s.heal) rows.push(['stat.heal', s.heal]);
     // magic: share of the target's max HP per hit (weapons raise it in proportion to the attack they add)
+    // defence: how much of a same-rank swordsman's hit still gets through (dmg = atk^2 / (atk + def))
+    const swAtk = computeStats('sword', c.rank).atk;
+    rows.push(['stat.defCut', Math.round((100 * swAtk) / (swAtk + s.def)) + '%']);
+    if (s.guard) rows.push(['stat.guard', `+${Math.round(s.def * s.guard.share)}`]);
     if (s.ward) rows.push(['stat.ward', s.ward.radius.toFixed(2)]);
     if (s.magic) rows.push(['stat.magic', (s.magic.pct * s.atk / computeStats(c.type, c.rank).atk * 100).toFixed(1) + '%']);
     for (const [k, v] of rows) { const tr = el('tr'); tr.innerHTML = `<td>${t(k)}</td><td data-stat="${k}">${v}</td>`; tbl.appendChild(tr); }
@@ -300,9 +330,10 @@ function openCharDetail(id) {
       const lb = el('span'); lb.textContent = t('slot.' + slot); row.appendChild(lb);
       const sel = el('select', '', { 'data-slot': slot });
       const none = el('option'); none.value = ''; none.textContent = t('equip.none'); sel.appendChild(none);
-      const ids = new Set(Object.keys(store.data.inventory).filter((i) => ITEMS[i].slot === slot && store.data.inventory[i] > 0));
+      const ids = new Set(Object.keys(store.data.inventory).filter((i) => itemStats(i)?.slot === slot && store.data.inventory[i] > 0));
       if (c.equip[slot]) ids.add(c.equip[slot]);
-      for (const i of ids) { const o = el('option'); o.value = i; o.textContent = `${t('item.' + i)} (${itemDesc(i)})`; sel.appendChild(o); }
+      const sorted = [...ids].sort((a, b) => parseItem(a).id.localeCompare(parseItem(b).id) || parseItem(b).lv - parseItem(a).lv);
+      for (const i of sorted) { const o = el('option'); o.value = i; o.textContent = `${itemName(i)} (${itemDesc(i)})`; sel.appendChild(o); }
       sel.value = c.equip[slot] || '';
       sel.addEventListener('change', () => {
         if (sel.value) store.equip(c.id, sel.value); else store.unequip(c.id, slot);
@@ -358,13 +389,27 @@ function openShop(tab = 'recruit') {
         const row = el('div', 'shop-item');
         const im = el('img'); im.src = icon(it.slot); row.appendChild(im);
         const nm = el('div', 'name'); nm.innerHTML = `${t('item.' + id)}<div class="desc">${itemDesc(id)}</div>`; row.appendChild(nm);
+        const grp = el('div', 'buy-group');
         const b = el('button', 'btn small primary', { 'data-buy-item': id }); b.textContent = t('shop.buy', { n: it.cost });
         b.disabled = store.data.coins < it.cost;
         b.addEventListener('click', () => {
           if (store.buyItem(id)) toast(t('shop.bought', { name: t('item.' + id) })); else toast(t('shop.notEnough'));
           G.modalRender(); renderHome();
         });
-        row.appendChild(b); list.appendChild(row);
+        const many = (k) => {
+          const snap = store.snapshot(); const got = store.buyItems(id, k);
+          if (got) showUndo(t('shop.boughtMany', { name: t('item.' + id), n: got }), snap); else toast(t('shop.notEnough'));
+          G.modalRender(); renderHome();
+        };
+        const b10 = el('button', 'btn small', { 'data-buy-item10': id }); b10.textContent = t('shop.buy10', { n: it.cost * 10 });
+        b10.disabled = store.maxBuyable(id) < 10;
+        b10.addEventListener('click', () => many(10));
+        const mxN = store.maxBuyable(id);
+        const bm = el('button', 'btn small', { 'data-buy-itemmax': id }); bm.textContent = t('shop.buyMax', { k: mxN });
+        bm.disabled = mxN < 1;
+        bm.addEventListener('click', () => many(store.maxBuyable(id)));
+        grp.append(b, b10, bm);
+        row.appendChild(grp); list.appendChild(row);
       }
     }
   });
@@ -401,6 +446,7 @@ function makeUnitEl(team, type, rank) {
   u.appendChild(el('div', 'shadow'));
   const s = spriteEl(team, type); u.appendChild(s);
   const hp = el('div', 'hpbar'); const fill = el('div', 'fill'); fill.style.width = '100%'; hp.appendChild(fill); u.appendChild(hp);
+  u.appendChild(el('div', 'guard-mark'));   // shown while a shielder guards this unit
   const rk = el('div', 'rank'); rk.textContent = `★${fmtRank(rank)}`; if (rk.textContent.length >= 5) rk.classList.add('long'); u.appendChild(rk);
   u.dataset.team = team; u.dataset.type = type; u.dataset.rank = rank;
   u._sprite = s; u._fill = fill;
@@ -442,6 +488,9 @@ function renderPrep() {
     const u = makeUnitEl('enemy', e.type, e.rank); u.classList.add('preview');
     const p = cellToField('enemy', e.cell, G.grid); positionEl(u, p.x, p.y);
     units.appendChild(u);
+    const est = computeStats(e.type, e.rank);
+    if (est.guard) { const r = makeGuardRing(est.guard.radius, 'enemy'); placeAura(r, p.x, p.y); $('#auras').appendChild(r); }
+    if (est.ward) { const a = makeAura(est.ward.radius, 'enemy'); placeAura(a, p.x, p.y); $('#auras').appendChild(a); }
   }
   // placed allies
   for (const [cid, cell] of Object.entries(store.formation)) {
@@ -453,6 +502,7 @@ function renderPrep() {
     units.appendChild(u);
     const st = computeStats(c.type, c.rank, c.equip);
     if (st.ward) { const a = makeAura(st.ward.radius); placeAura(a, p.x, p.y); $('#auras').appendChild(a); }
+    if (st.guard) { const r = makeGuardRing(st.guard.radius, 'ally'); placeAura(r, p.x, p.y); $('#auras').appendChild(r); }
   }
   // bench
   $('#bench-list').innerHTML = '';
@@ -653,9 +703,15 @@ function fxAt(cls, x, y, text) {
 }
 
 // ---- warder barrier: a translucent dome on the ground showing where magic is nullified ----
-function makeAura(radius) {
-  const a = el('div', 'ward-dome', { 'data-testid': 'ward-dome' });
+function makeAura(radius, team = 'ally') {
+  const a = el('div', 'ward-dome' + (team === 'enemy' ? ' enemy' : ''), { 'data-testid': 'ward-dome' });
   a.appendChild(el('div', 'hex'));
+  sizeAura(a, radius);
+  return a;
+}
+// shielder's guard: a dotted silver ring (allies inside gain part of the shielder's defence)
+function makeGuardRing(radius, team) {
+  const a = el('div', 'guard-ring' + (team === 'enemy' ? ' enemy' : ''), { 'data-testid': 'guard-ring' });
   sizeAura(a, radius);
   return a;
 }
@@ -676,19 +732,27 @@ function magicColor(a) {
   return a.type === 'lich' ? 'necro' : a.type === 'summoner' ? 'arcane' : a.team === 'enemy' ? 'violet' : 'gold';
 }
 // element at field position with a lifetime scaled by the battle speed
+// (at x2 / x4 the effects speed up too, but never more than 2x, so the area stays readable)
+const fxMs = (ms) => ms / Math.min(G.speed, 2);
 function fxTimed(cls, x, y, ms) {
   const e = el('div', cls); e.style.left = x * G.cs + 'px'; e.style.top = (y + OY) * G.cs + 'px';
-  e.style.setProperty('--dur', ms / G.speed + 'ms');
-  $('#fx').appendChild(e); setTimeout(() => e.remove(), ms / G.speed + 50);
+  $('#fx').appendChild(e); fxLife(e, ms);
   return e;
+}
+// (re)start an effect's lifetime: its CSS animation runs for `ms`, then it is removed
+function fxLife(e, ms) {
+  e.style.setProperty('--dur', fxMs(ms) + 'ms');
+  clearTimeout(e._t); e._t = setTimeout(() => e.remove(), fxMs(ms) + 50);
 }
 function sizeCircle(e, r) {
   const w = r * 2 * G.cs;
   Object.assign(e.style, { width: w + 'px', height: w + 'px', margin: `${-w / 2}px 0 0 ${-w / 2}px` });   // exact area
 }
+const MAGIC_AREA_MS = 1100;   // how long the area stays visible after the hit (at x1)
 // cast start: mark the area around the target
 function magicCast(a, tg) {
-  const c = fxTimed(`magic-circle ${magicColor(a)}`, tg.x, tg.y, (HIT_TIME * 1000) + 700);
+  // stays up until the impact (which restarts its lifetime); the fallback covers a cancelled cast
+  const c = fxTimed(`magic-circle ${magicColor(a)}`, tg.x, tg.y, (HIT_TIME * 1000) + 900);
   sizeCircle(c, a.magic.radius);
   c.appendChild(el('div', 'rune'));
   G.magicCircles.set(a.uid, c);
@@ -698,9 +762,10 @@ function magicCast(a, tg) {
 function magicImpact(ev, a) {
   const color = magicColor(a);
   let c = G.magicCircles.get(ev.uid); G.magicCircles.delete(ev.uid);
-  if (!c || !c.isConnected) { c = fxTimed(`magic-circle ${color}`, ev.x, ev.y, 700); c.appendChild(el('div', 'rune')); }
+  if (!c || !c.isConnected) { c = fxTimed(`magic-circle ${color}`, ev.x, ev.y, MAGIC_AREA_MS); c.appendChild(el('div', 'rune')); }
   c.style.left = ev.x * G.cs + 'px'; c.style.top = (ev.y + OY) * G.cs + 'px';
   sizeCircle(c, ev.r); c.classList.add('impact');
+  fxLife(c, MAGIC_AREA_MS);   // keep the area visible for a while after the hit
   const p = fxTimed(`light-pillar ${color}`, ev.x, ev.y, 650);
   const w = Math.max(14, ev.r * G.cs * 0.9), h = G.cs * 3.2;
   Object.assign(p.style, { width: w + 'px', height: h + 'px', margin: `${-h}px 0 0 ${-w / 2}px` });
@@ -807,19 +872,22 @@ function renderBattle() {
     ue.classList.toggle('poisoned', u.poisonUntil > b.time && u.state !== 'dying');
     ue.classList.toggle('buffed', u.buffUntil > b.time && u.state !== 'dying');
     ue.classList.toggle('stunned', u.stunUntil > b.time && u.state !== 'dying');
+    ue.classList.toggle('guarded', u.state !== 'dying' && !!b.guardOf(u));   // a shielder's guard covers it
     ue.dataset.hp = u.hp;
     ue._fill.style.width = `${(100 * u.hp) / u.maxHp}%`;
   }
   for (const [uid, ue] of G.unitEls) if (!b.units.some((u) => u.uid === uid)) { ue.remove(); G.unitEls.delete(uid); }
-  // barriers follow their warder and vanish when it falls
+  // warder barriers / shielder guard rings follow their unit and vanish when it falls
+  const live = new Set();
   for (const u of b.units) {
-    if (!u.ward) continue;
+    const area = u.ward || u.guard; if (!area) continue;
+    if (u.state === 'dying' || u.hp <= 0) continue;
+    live.add(u.uid);
     let a = G.auraEls.get(u.uid);
-    if (u.state === 'dying' || u.hp <= 0) { if (a) { a.remove(); G.auraEls.delete(u.uid); } continue; }
-    if (!a) { a = makeAura(u.ward.radius); a.dataset.uid = u.uid; $('#auras').appendChild(a); G.auraEls.set(u.uid, a); }
-    sizeAura(a, u.ward.radius); placeAura(a, u.x, u.y);
+    if (!a) { a = u.ward ? makeAura(area.radius, u.team) : makeGuardRing(area.radius, u.team); a.dataset.uid = u.uid; $('#auras').appendChild(a); G.auraEls.set(u.uid, a); }
+    sizeAura(a, area.radius); placeAura(a, u.x, u.y);
   }
-  for (const [uid, a] of G.auraEls) if (!b.units.some((u) => u.uid === uid)) { a.remove(); G.auraEls.delete(uid); }
+  for (const [uid, a] of G.auraEls) if (!live.has(uid)) { a.remove(); G.auraEls.delete(uid); }
   updateBattleInfo();
 }
 

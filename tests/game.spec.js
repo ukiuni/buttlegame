@@ -713,6 +713,21 @@ test('魔法：敵も魔法を使い、範囲内の相手の最大HPの割合で
   await page.waitForSelector('.light-pillar:not(.mini)', { state: 'attached', timeout: 20_000 });
   await page.waitForSelector('.light-pillar.mini', { state: 'attached', timeout: 20_000 });
   await page.waitForSelector('.dmg.magic', { state: 'attached' });
+  // our own spell's area stays clearly visible for a while after the hit (not just a quick flash)
+  const stillVisible = await page.evaluate(() => new Promise((resolve) => {
+    // catch one of our circles at the moment of the hit, then look again 0.6 s later
+    new MutationObserver((muts, obs) => {
+      for (const m of muts) {
+        const c = m.target;
+        if (c.classList && c.classList.contains('gold') && c.classList.contains('impact')) {
+          obs.disconnect();
+          setTimeout(() => resolve(c.isConnected && +getComputedStyle(c).opacity > 0.5), 600);
+          return;
+        }
+      }
+    }).observe(document.querySelector('#fx'), { subtree: true, attributes: true, attributeFilter: ['class'] });
+  }));
+  expect(stillVisible).toBe(true);
   // the circle matches the spell's radius (2 x radius cells wide)
   const ratio = await page.evaluate(() => { const c = document.querySelector('.magic-circle'); return parseFloat(c.style.width) / __game.G.cs; });
   expect([2.5, 2.0, 1.8]).toContainEqual(Math.round(ratio * 10) / 10);
@@ -760,4 +775,87 @@ test('魔法防御師：結界の範囲が表示され、範囲内の味方へ�
   });
   expect(res.nullified).toBeGreaterThan(0);
   expect(res.magicOnAllies).toBe(0);
+});
+
+test('シールダー：防御力でダメージを軽減し、近くの味方の防御力を上げる（範囲とマークが見える）', async ({ page }) => {
+  await gotoHome(page);
+  // detail screen: shows how much damage gets through and the guard bonus
+  await page.locator('.roster-card[data-type="shield"]').first().click();
+  await expect(page.locator('[data-stat="stat.defCut"]')).toHaveText(/^\d+%$/);
+  await expect(page.locator('[data-stat="stat.guard"]')).toHaveText(/^\+\d+$/);
+  const cutShield = parseInt(await page.locator('[data-stat="stat.defCut"]').textContent(), 10);
+  await page.click('#btn-modal-close');
+  await page.locator('.roster-card[data-type="mage"]').first().click();
+  const cutMage = parseInt(await page.locator('[data-stat="stat.defCut"]').textContent(), 10);
+  expect(cutShield).toBeLessThan(cutMage);            // the shielder takes much less damage
+  await expect(page.locator('[data-stat="stat.guard"]')).toHaveCount(0);
+  await page.click('#btn-modal-close');
+  // formation: the placed shielder shows its guard ring (radius 1.5)
+  await page.click('#btn-home-start');
+  await expect(page.locator('.unit.placed[data-type="shield"]')).toHaveCount(1);
+  const ring = page.locator('#auras .guard-ring:not(.enemy)');
+  await expect(ring).toHaveCount(1);
+  const r = await page.evaluate(() => parseFloat(document.querySelector('.guard-ring:not(.enemy)').style.width) / __game.G.cs / 2);
+  expect(r).toBeCloseTo(1.5, 2);
+  // battle: allies next to the shielder carry the guard mark, and really get the bonus
+  await startBattle(page, { speed: 1 });
+  await expect(page.locator('.unit.team-ally.guarded').first()).toBeVisible();
+  const ok = await page.evaluate(() => {
+    const b = __game.battle; const g = b.units.filter((u) => u.team === 'ally' && b.guardOf(u));
+    return g.length > 0 && g.every((u) => b.defOf(u) > u.def);
+  });
+  expect(ok).toBe(true);
+});
+
+test('装備：まとめ買い・合体（レベル加算、元に戻せる）・おまかせ編成で装着', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => __game.setCoins(1000));
+  // buy 10 bronze swords at once
+  await page.click('#btn-home-shop');
+  await page.click('[data-tab="equipment"]');
+  await page.click('[data-buy-item10="bronze_sword"]');
+  await page.click('#btn-modal-close');
+  await expect(page.locator('#home-coins')).toHaveText('600');
+  await expect(page.locator('.inv-item[data-item="bronze_sword"]')).toContainText('×10');
+  // merge them into one +10 sword
+  const mb = page.locator('[data-merge-item="bronze_sword"]');
+  await expect(mb).toContainText('+10');
+  await mb.click();
+  await expect(page.locator('.inv-item[data-item="bronze_sword+10"]')).toContainText('×1');
+  await expect(page.locator('.inv-item[data-item="bronze_sword"]')).toHaveCount(0);
+  // undo brings the 10 swords back
+  await page.click('#btn-undo');
+  await expect(page.locator('.inv-item[data-item="bronze_sword"]')).toContainText('×10');
+  await mb.click();
+  // auto arrange equips the +10 sword on a unit on the field
+  await page.click('#btn-home-start');
+  await page.click('#btn-auto');
+  await expect(page.locator('[data-testid="auto-plan"] .plan-equip').first()).toContainText(JA['item.bronze_sword'] + ' +10');
+  await page.click('[data-testid="auto-confirm"]');
+  const worn = await page.evaluate(() => { const s = __game.store; return Object.keys(s.formation).map((id) => s.char(+id).equip.weapon).filter(Boolean); });
+  expect(worn).toContain('bronze_sword+10');
+  expect(await page.evaluate(() => __game.store.data.inventory['bronze_sword+10'] || 0)).toBe(0);
+});
+
+test('結界インプ：ステージ25から登場し、敵側の結界（ピンク）が見え、こちらの魔法を無効化する', async ({ page }) => {
+  await gotoPrep(page, { stage: 25 });
+  const imp = page.locator('.unit.team-enemy[data-type="warder"]');
+  await expect(imp).toHaveCount(1);
+  // the enemy barrier is shown in its own colour while arranging the formation
+  await expect(page.locator('#auras .ward-dome.enemy')).toHaveCount(1);
+  // tapping it explains what it does
+  await imp.click({ force: true });
+  await expect(page.locator('#toast')).toContainText(JA['mon.warder']);
+  await expect(page.locator('#toast')).toContainText(JA['monDesc.warder']);
+  // our mages' spells that land in the barrier are nullified
+  await page.evaluate(() => {
+    const s = __game.store; s.data.coins = 1e5; s.recruitMany('mage', 2);   // 3 mages in total
+    // an evenly matched fight, so the battle lasts long enough for spells to reach the imp's barrier
+    s.data.roster.filter((c) => c.type === 'mage').forEach((m, i) => { m.rank = 5; s.place(m.id, [10, 13, 14][i]); });
+    s.data.roster.filter((c) => c.type !== 'mage').forEach((c) => { c.rank = 2; });
+    s.save(); __game.refresh();
+  });
+  await startBattle(page, { speed: 4 });
+  await expect.poll(() => page.evaluate(() => __game.battle.trace.some((x) => x.kind === 'nullify'
+    && [...__game.battle.units, ...__game.battle.removed].find((u) => u.uid === x.warder).team === 'enemy')), { timeout: 30_000 }).toBe(true);
 });
