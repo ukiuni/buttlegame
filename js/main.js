@@ -237,7 +237,6 @@ function goHome() {
 function renderHome() {
   $('#home-coins').textContent = store.data.coins;
   $('#home-stage').textContent = t('common.stage', { n: store.data.stage });
-  renderBossTag('#home-boss');
   $('#roster-title').textContent = t('home.roster', { n: store.data.roster.length });
   const roster = $('#roster'); roster.innerHTML = '';
   const sorted = [...store.data.roster].sort((a, b) => TYPES.indexOf(a.type) - TYPES.indexOf(b.type) || b.rank - a.rank);
@@ -441,11 +440,14 @@ function layoutField() {
 }
 
 function unitSize() { return Math.round(G.cs * 1.15); }
-// "BOSS" tag next to the stage number on boss stages (every 10th stage)
-function renderBossTag(sel) {
-  const b = bossForStage(store.data.stage), e = $(sel);
-  e.classList.toggle('hidden', !b);
-  if (b) { e.textContent = t('boss.mark'); e.title = charName(b.type, 'enemy'); }
+// Boss HP is shown in the info row above the field (a bar over the big sprite would cover the units behind it).
+function renderBossHp(hp, maxHp) {
+  const b = bossForStage(store.data.stage), box = $('#boss-hp');
+  box.classList.toggle('hidden', !b);
+  if (!b) return;
+  box.style.setProperty('--boss-glow', BOSS_GLOW[b.element]);
+  box.querySelector('.boss-hp-name').textContent = charName(b.type, 'enemy');
+  box.querySelector('.fill').style.width = (maxHp ? Math.max(0, hp / maxHp) * 100 : 100) + '%';
 }
 
 function makeUnitEl(team, type, rank) {
@@ -462,7 +464,6 @@ function makeUnitEl(team, type, rank) {
   if (boss) {   // drawn about twice as big, glowing in its element colour, with a BOSS label
     u.classList.add('boss'); u.dataset.boss = boss.index; u.dataset.element = boss.element;
     u.style.setProperty('--boss-glow', BOSS_GLOW[boss.element]);
-    const tag = el('div', 'boss-label'); tag.textContent = t('boss.mark'); u.appendChild(tag);
   }
   u._sprite = s; u._fill = fill;
   if (team === 'enemy') u.classList.add('facing-left');
@@ -491,7 +492,6 @@ function enterPrep() {
 
 function renderTopbar() {
   $('#battle-stage').textContent = t('common.stage', { n: store.data.stage });
-  renderBossTag('#battle-boss');
   $('#battle-coins').textContent = store.data.coins;
 }
 
@@ -546,6 +546,7 @@ function renderPrep() {
   }
   $('#info-left').textContent = '';
   $('#info-right').textContent = t('battle.enemies', { n: wave.units.length });
+  renderBossHp(1, 1);
   $('#btn-fight').disabled = store.placedCount() === 0;
 }
 
@@ -931,6 +932,8 @@ function updateBattleInfo() {
   const b = G.battle; if (!b) return;
   $('#info-left').textContent = t('battle.allies', { n: b.units.filter((u) => u.team === 'ally').length });
   $('#info-right').textContent = t('battle.enemies', { n: b.units.filter((u) => u.team === 'enemy').length });
+  const boss = b.units.find((u) => u.boss) || b.removed.find((u) => u.boss);
+  renderBossHp(boss ? boss.hp : 0, boss ? boss.maxHp : 1);
   $('#btn-speed').textContent = t('battle.speed', { n: G.speed });
 }
 

@@ -959,15 +959,19 @@ test('結界インプ：ステージ25から登場し、敵側の結界（ピン
 });
 
 // =============== Bosses ===============
-test('ボス：10ステージごとに大きなボスが登場し、名前のバナー・BOSS 表示・説明が出る', async ({ page }) => {
+test('ボス：10ステージごとに大きなボスが登場し、名前とHPバーをフィールドの上に表示、開始時にバナーが出る', async ({ page }) => {
   await gotoHome(page);
   await page.evaluate(() => __game.setStage(9));
-  await expect(page.getByTestId('home-boss')).toBeHidden();
-  await page.evaluate(() => __game.setStage(10));
-  await expect(page.getByTestId('home-boss')).toBeVisible();
-  await expect(page.getByTestId('home-boss')).toHaveText('BOSS');
   await page.click('#btn-home-start');
-  await expect(page.getByTestId('battle-boss')).toBeVisible();
+  await expect(page.getByTestId('boss-hp')).toBeHidden();
+  await page.click('#btn-battle-home');
+  await page.evaluate(() => __game.setStage(10));
+  await page.click('#btn-home-start');
+  // boss name + HP bar in the info row above the field (not over the units); no "BOSS" text anywhere
+  await expect(page.getByTestId('boss-hp')).toBeVisible();
+  await expect(page.getByTestId('boss-hp')).toContainText(JA['mon.boss0']);
+  await expect(page.locator('.unit.boss .hpbar')).toBeHidden();
+  expect(await page.locator('#screen-battle').innerText()).not.toContain('BOSS');
   // exactly one boss in the enemy preview, drawn much bigger than the other monsters
   const boss = page.locator('.unit.preview.boss');
   await expect(boss).toHaveCount(1);
@@ -988,6 +992,9 @@ test('ボス：10ステージごとに大きなボスが登場し、名前のバ
   await expect(page.getByTestId('boss-banner')).toContainText(JA['boss.appear']);
   await expect(page.getByTestId('boss-banner')).toContainText(JA['mon.boss0']);
   await expect(page.locator('#units .unit.boss')).toHaveCount(1);
+  // the HP bar follows the boss's HP during the battle
+  await page.evaluate(() => { const b = __game.battle.units.find((u) => u.boss); b.hp = Math.round(b.maxHp / 4); });
+  await expect.poll(() => page.evaluate(() => parseFloat(document.querySelector('#boss-hp .fill').style.width))).toBeLessThan(30);
 });
 
 test('ボス：50種類すべてのボスのドット絵が描け、どれも別の見た目になる', async ({ page }) => {
@@ -1019,5 +1026,17 @@ test('ボス：倒すと次のステージへ進み、ボスステージの勝�
   expect(await page.evaluate(() => __game.store.data.coins) - c0).toBe(rewardCoins(10, true));
   expect(rewardCoins(10, true)).toBe((40 + 10 * 15) * 2);
   await page.click('#btn-next');
-  await expect(page.getByTestId('battle-boss')).toBeHidden();   // stage 11 is a normal stage
+  await expect(page.getByTestId('boss-hp')).toBeHidden();   // stage 11 is a normal stage
+});
+
+test('ホーム：ゲームスタートボタンの文字が上下中央にある（ボタンが縦に潰れない）', async ({ page }) => {
+  await gotoHome(page);
+  const r = await page.evaluate(() => {
+    const b = document.querySelector('#btn-home-start'), rg = document.createRange();
+    rg.selectNodeContents(b);
+    const br = b.getBoundingClientRect(), tr = rg.getBoundingClientRect();
+    return { btnMid: br.top + br.height / 2, textMid: tr.top + tr.height / 2, btnH: br.height, textH: tr.height };
+  });
+  expect(Math.abs(r.btnMid - r.textMid)).toBeLessThan(3);
+  expect(r.btnH).toBeGreaterThan(r.textH + 16);   // padding is kept above and below the text
 });

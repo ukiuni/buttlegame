@@ -359,7 +359,6 @@ const BOSS_STRINGS = {
   "fmt": "{elem}{body}",
   "desc": "BOSS：{body}／{elem}／魔法ダメージ半減",
   "appear": "ボス出現！",
-  "mark": "BOSS",
   "elems": [
    "紅蓮の",
    "氷獄の",
@@ -403,7 +402,6 @@ const BOSS_STRINGS = {
   "fmt": "{elem} {body}",
   "desc": "BOSS: {body} / {elem} / halves magic damage",
   "appear": "A boss appears!",
-  "mark": "BOSS",
   "elems": [
    "Crimson",
    "Frost",
@@ -447,7 +445,6 @@ const BOSS_STRINGS = {
   "fmt": "{elem}{body}",
   "desc": "BOSS：{body}／{elem}／魔法伤害减半",
   "appear": "BOSS 出现！",
-  "mark": "BOSS",
   "elems": [
    "红莲",
    "冰狱",
@@ -491,7 +488,6 @@ const BOSS_STRINGS = {
   "fmt": "{elem} {body}",
   "desc": "BOSS: {body} / {elem} / 마법 피해 절반",
   "appear": "보스 출현!",
-  "mark": "BOSS",
   "elems": [
    "홍련의",
    "빙옥의",
@@ -534,7 +530,7 @@ const BOSS_STRINGS = {
 };
 for (const [lang, b] of Object.entries(BOSS_STRINGS)) {
   const S = STRINGS[lang];
-  S['boss.appear'] = b.appear; S['boss.mark'] = b.mark;
+  S['boss.appear'] = b.appear;
   BOSS_ELEMENTS.forEach((e, i) => { S['bossElem.' + e.id] = b.elems[i]; S['bossTrait.' + e.id] = b.traits[i]; });
   BOSS_BODIES.forEach((d, i) => { S['bossBody.' + d.id] = b.bodies[i]; S['bossBodyDesc.' + d.id] = b.bdesc[i]; });
   for (const bo of BOSSES) {
