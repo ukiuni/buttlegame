@@ -366,6 +366,7 @@ function openCharDetail(id) {
     rows.push(['stat.defCut', Math.round((100 * swAtk) / (swAtk + s.def)) + '%']);
     if (s.guard) rows.push(['stat.guard', `+${Math.round(s.def * s.guard.share)}`]);
     if (s.ward) rows.push(['stat.ward', s.ward.radius.toFixed(2)]);
+    if (s.curse) rows.push(['stat.curse', `-${Math.round(s.curse.atk * 100)}% / -${Math.round(s.curse.def * 100)}%`]);
     if (s.magic) rows.push(['stat.magic', (s.magic.pct * (s.magBase ? s.mag / s.magBase : 1) * 100).toFixed(1) + '%']);
     for (const [k, v] of rows) { const tr = el('tr'); tr.innerHTML = `<td>${t(k)}</td><td data-stat="${k}">${v}</td>`; tbl.appendChild(tr); }
     box.appendChild(tbl);
@@ -521,6 +522,7 @@ function makeUnitEl(team, type, rank, weapon = null) {
   const s = spriteEl(team, type, 0, weapon); u.appendChild(s);
   const hp = el('div', 'hpbar'); const fill = el('div', 'fill'); fill.style.width = '100%'; hp.appendChild(fill); u.appendChild(hp);
   u.appendChild(el('div', 'guard-mark'));   // shown while a shielder guards this unit
+  u.appendChild(el('div', 'curse-mark'));   // shown while a hexer's curse lasts
   const rk = el('div', 'rank'); rk.textContent = `★${fmtRank(rank)}`; if (rk.textContent.length >= 5) rk.classList.add('long'); u.appendChild(rk);
   u.dataset.team = team; u.dataset.type = type; u.dataset.rank = rank;
   const boss = bossInfo(type);
@@ -887,8 +889,8 @@ function handleEvents(b) {
         const bt = baseType(a.type);   // bosses use their base monster's effects
         if (a.pierce) break; // breath is drawn on the 'breath' event
         if (a.magic && ev.action === 'attack') { magicCast(a, tg); break; } // area magic: rune circle, then light pillar
-        if (['archer', 'mage', 'healer', 'lich', 'summoner', 'enchanter', 'warder'].includes(bt)) {
-          const kind = bt === 'archer' ? 'arrow' : bt === 'mage' ? (a.team === 'ally' ? 'fire' : 'dark') : bt === 'lich' ? 'necro'
+        if (['archer', 'mage', 'healer', 'lich', 'summoner', 'enchanter', 'warder', 'hexer'].includes(bt)) {
+          const kind = bt === 'archer' ? 'arrow' : bt === 'hexer' ? 'curse' : bt === 'mage' ? (a.team === 'ally' ? 'fire' : 'dark') : bt === 'lich' ? 'necro'
             : bt === 'summoner' || bt === 'warder' ? 'arcane' : bt === 'enchanter' ? 'spark' : 'heal';
           shootProj(kind, a, tg, travel);
         } else {
@@ -924,6 +926,11 @@ function handleEvents(b) {
         if (u) { fxAt('dmg null', u.x, u.y - 0.9, t('battle.nullified')); fxAt('ward-flash', u.x, u.y - 0.35); }
         break;
       }
+      case 'curse': {   // the cursed area: a dark purple ring with a skull, briefly
+        const c = fxTimed('curse-circle', ev.x, ev.y, 900); sizeCircle(c, ev.r);
+        break;
+      }
+      case 'cursed': if (u) fxAt('dmg curse', u.x, u.y - 0.9, t('battle.cursed')); break;
       case 'magic': magicImpact(ev, b.get(ev.uid) || b.removed.find((r) => r.uid === ev.uid)); break;
       case 'charge': if (u) fxAt('dust', u.x, u.y); break;
       case 'chant': break; // shown by the .state-cast magic circle
@@ -972,6 +979,7 @@ function renderBattle() {
     if (+ue.dataset.frame !== fr) { setFrame(ue._sprite, fr); ue.dataset.frame = fr; }
     ue.classList.toggle('poisoned', u.poisonUntil > b.time && u.state !== 'dying');
     ue.classList.toggle('buffed', u.buffUntil > b.time && u.state !== 'dying');
+    ue.classList.toggle('cursed', !!b.curseOf(u) && u.state !== 'dying');
     ue.classList.toggle('stunned', u.stunUntil > b.time && u.state !== 'dying');
     ue.classList.toggle('guarded', u.state !== 'dying' && !!b.guardOf(u));   // a shielder's guard covers it
     ue.dataset.hp = u.hp;

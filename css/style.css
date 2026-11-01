@@ -297,3 +297,15 @@ body.big-board #prep-panel .hint { display: none; }
 .update-buttons { display: flex; gap: 10px; }
 .update-buttons .btn { flex: 1; }
 .shop-group { margin: 10px 0 2px; color: #ffe070; font-size: .9rem; border-bottom: 1px solid #3c4cc8; padding-bottom: 2px; }
+/* ---- hexer curse ---- */
+.proj.curse { border-radius: 50%; background: radial-gradient(#f0d0ff, #9020e0 50%, #200030); box-shadow: 0 0 8px #a040ff; }
+.curse-circle { position: absolute; border-radius: 50%; pointer-events: none; z-index: 1; border: 3px solid #a040ff;
+  background: radial-gradient(closest-side, #50107044, #a040ff55 85%, transparent); box-shadow: 0 0 14px #a040ff, inset 0 0 14px #a040ff88;
+  animation: curse-pulse var(--dur, .9s) ease-out forwards; }
+@keyframes curse-pulse { 0% { opacity: 0; transform: scale(.4); } 25% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.05); } }
+.dmg.curse { color: #d090ff; }
+.unit.cursed .sprite { filter: drop-shadow(0 0 2px #a040ff) saturate(.7) brightness(.85); }
+.unit .curse-mark { display: none; position: absolute; left: 6%; top: 6%; width: 22%; height: 22%; z-index: 2; border-radius: 50% 50% 40% 40%;
+  background: radial-gradient(circle at 35% 45%, #200030 18%, transparent 20%), radial-gradient(circle at 65% 45%, #200030 18%, transparent 20%), #e8d0ff;
+  box-shadow: 0 0 0 1px #300040, 0 0 4px #a040ff; }
+.unit.cursed .curse-mark { display: block; }

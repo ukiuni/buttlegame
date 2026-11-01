@@ -664,3 +664,57 @@ test('split: a merged character can be split into two (ranks add back up); ★1 
   const one = s.data.roster.find((c) => c.rank === 1);
   assert.equal(s.splitChar(one.id, 1), null, '★1 cannot be split');
 });
+
+// ---------- hexer (curse) ----------
+test('hexer: curses foes around its target — ATK / magic power down a little, DEF / magic defence down a lot', () => {
+  const hx = makeUnit({ team: 'ally', type: 'hexer', rank: 1, cell: 12 });
+  const t1 = makeUnit({ team: 'enemy', type: 'shield', rank: 5, cell: 7 }), t2 = makeUnit({ team: 'enemy', type: 'sword', rank: 5, cell: 6 });
+  const far = makeUnit({ team: 'enemy', type: 'sword', rank: 5, cell: 0 });
+  far.x = 0.5; far.y = 0.3;
+  const bt = new Battle({ allies: [hx], enemies: [t1, t2, far] });
+  const before = { atk: bt.atkOf(t1), def: bt.defOf(t1) };
+  bt.applyCurse(hx, t1);
+  const c = hx.curse;
+  assert.ok(c.def > c.atk * 2 && c.mres > c.mag * 2, 'defence cuts are much larger');
+  assert.equal(bt.defOf(t1), Math.round(before.def * (1 - c.def)));
+  assert.equal(bt.atkOf(t1), Math.round(before.atk * (1 - c.atk)));
+  assert.ok(bt.curseOf(t2), 'neighbour cursed too');
+  assert.equal(bt.curseOf(far), null, 'out of range');
+  // physical damage taken goes up
+  const sw = makeUnit({ team: 'ally', type: 'sword', rank: 5, cell: 12 });
+  const dmg = (cursed) => {
+    const tgt = makeUnit({ team: 'enemy', type: 'shield', rank: 5, cell: 7 });
+    const b2 = new Battle({ allies: [sw, hx], enemies: [tgt], seed: 9 });
+    if (cursed) b2.applyCurse(hx, tgt);
+    return b2.applyDamage(sw, tgt);
+  };
+  assert.ok(dmg(true) > dmg(false) * 1.15);
+  // magic: a cursed ally with a magic charm takes much more magic damage
+  const magicHit = (cursed) => {
+    const em = makeUnit({ team: 'enemy', type: 'mage', rank: 5, cell: 2 });
+    const ehx = makeUnit({ team: 'enemy', type: 'hexer', rank: 5, cell: 3 });
+    const a = makeUnit({ team: 'ally', type: 'sword', rank: 5, equip: { accessory: 'saint_talisman' }, cell: 2 });
+    const b3 = new Battle({ allies: [a], enemies: [em, ehx], seed: 4 });
+    if (cursed) b3.applyCurse(ehx, a);
+    b3.applyMagic(em, a);
+    return a.maxHp - a.hp;
+  };
+  assert.ok(magicHit(true) > magicHit(false) * 1.3, `${magicHit(true)} vs ${magicHit(false)}`);
+  // wears off
+  for (let i = 0; i < 60 * 5; i++) bt.time += 1 / 60;
+  assert.equal(bt.curseOf(t1), null);
+});
+
+test('hexer: a warder barrier blocks curses; stronger with rank and magic power (capped); monster hexer from stage 35', () => {
+  const hx = makeUnit({ team: 'enemy', type: 'hexer', rank: 3, cell: 7 });
+  const w = makeUnit({ team: 'ally', type: 'warder', rank: 1, cell: 2 });
+  const a = makeUnit({ team: 'ally', type: 'sword', rank: 1, cell: 2 });
+  const bt = new Battle({ allies: [w, a], enemies: [hx] });
+  bt.applyCurse(hx, a);
+  assert.equal(bt.curseOf(a), null, 'inside the barrier');
+  const c1 = computeStats('hexer', 1).curse, c50 = computeStats('hexer', 50, { weapon: 'archmage_staff' }).curse;
+  assert.ok(c50.def > c1.def && c50.def <= 0.75 && c50.atk <= 0.3);
+  for (let st = 1; st < 35; st++) assert.ok(!enemyWave(st).units.some((u) => u.type === 'hexer'), `none before 35 (${st})`);
+  assert.ok(enemyWave(35).units.some((u) => u.type === 'hexer'));
+  for (let st = 35; st < 150; st++) assert.ok(enemyWave(st).units.filter((u) => u.type === 'hexer').length <= 2);
+});

@@ -69,6 +69,7 @@ export const CHARS = {
   hero_lancer:   { skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'helmet', metal: '#e0c050', metalS: '#a08020', plume: '#3060e0', body: 'tunic', tunic: '#c03838', tunicS: '#802020', belt: '#e0c050', pants: '#504040', boot: C.boot, weapon: 'spear' },
   hero_thief:    { skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'bandana', hair: '#302838', band: '#d03040', bandS: '#902028', body: 'tunic', tunic: '#3c3c50', tunicS: '#24243a', belt: '#a07030', pants: '#2c2c3c', boot: '#201820', weapon: 'dagger', scarf: '#d03040' },
   hero_warder: { skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'whitehood', hair: '#506080', hood: '#3a78d0', hoodS: '#24508c', trim: '#c8e8ff', body: 'robe', tunic: '#2c5aa8', tunicS: '#1c3c78', belt: '#c8e8ff', boot: '#3a4060', weapon: 'staff', orb: '#80e8ff' },
+  hero_hexer:  { skin: '#e8d0c0', skinS: '#b89880', eye: '#c040ff', head: 'hood', hair: '#e8e8f0', hood: '#2c2238', hoodS: '#18121f', body: 'robe', tunic: '#3a2a4a', tunicS: '#221830', belt: '#a040ff', boot: '#18121f', weapon: 'staff', orb: '#b040ff' },
   hero_enchanter:{ skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'circlet', hair: '#f090c0', hairS: '#c06090', circlet: '#f0c040', gem: '#ff4060', body: 'robe', tunic: '#f0a830', tunicS: '#b87010', belt: '#ffffff', boot: '#8a5a2c', weapon: 'rod', orb: '#ffd040' },
   hero_summoner: { skin: C.skin, skinS: C.skinS, eye: C.eye, head: 'hood', hair: '#40d0d0', hood: '#7a2a8a', hoodS: '#4c1458', body: 'robe', tunic: '#7a2a8a', tunicS: '#4c1458', belt: '#40d0d0', boot: '#302040', weapon: 'staff', orb: '#40d0ff' },
   hero_dragon:   { custom: 'dragon', body: '#3a70d0', bodyS: '#204090', belly: '#a0e0ff', wing: '#5a9ae8', wingS: '#203a80', eye: '#ffe040', horn: '#f0f0ff' },
@@ -84,6 +85,7 @@ export const CHARS = {
   mon_golem:   { custom: 'golem', stone: '#8a8a7a', stoneS: '#5a5a4e', stoneL: '#b4b4a2', moss: '#5a8a3a', eye: '#40e0ff' },
   mon_dragon:  { custom: 'dragon', body: '#d04030', bodyS: '#902018', belly: '#f0c060', wing: '#b03848', wingS: '#601828', eye: '#ffe040', horn: '#f0e0c0' },
   mon_warder:  { skin: '#5a78e0', skinS: '#3448a0', eye: '#ffe040', head: 'goblin', body: 'robe', tunic: '#7a2a5a', tunicS: '#4c1438', belt: '#ff60c0', boot: '#3448a0', weapon: 'staff', orb: '#ff60e0' },
+  mon_hexer:   { skin: '#7a9a50', skinS: '#4c6a2c', eye: '#c0ff40', head: 'skull', hood: '#2a3a1a', hoodS: '#18220e', body: 'robe', tunic: '#3a2a1a', tunicS: '#22180e', belt: '#a0ff40', boot: '#4c6a2c', weapon: 'staff', orb: '#a0ff40' },
   mon_healer:  { skin: '#f0dcc0', skinS: '#c0a080', eye: '#20142a', head: 'mushroom', cap: '#d83838', capS: '#982020', body: 'robe', tunic: '#80b848', tunicS: '#507828', belt: '#f0dcc0', boot: '#c0a080', weapon: 'rod', orb: '#ff90e0' },
 };
 

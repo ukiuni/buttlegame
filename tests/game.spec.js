@@ -863,8 +863,9 @@ test('魔法防御師：結界の範囲が表示され、範囲内の味方へ�
   await startBattle(page, { speed: 2 });
   await expect(dome).toHaveCount(1);                         // follows the warder in battle
   // the enemy mage's spell is nullified: "無効" pops up and no ally inside took magic damage
-  await page.waitForSelector('.dmg.null', { state: 'attached', timeout: 30_000 });
-  await expect(page.locator('.dmg.null').first()).toHaveText(JA['battle.nullified']);
+  // (read the text from the element we waited for: the popup is short-lived and may be gone a moment later)
+  const pop = await page.waitForSelector('.dmg.null', { state: 'attached', timeout: 30_000 });
+  expect(await pop.textContent()).toBe(JA['battle.nullified']);
   const res = await page.evaluate(() => {
     const b = __game.battle; const all = [...b.units, ...b.removed];
     const get = (id) => all.find((u) => u.uid === id);
@@ -1196,4 +1197,45 @@ test('分解：合成した仲間を2体に分解でき、元に戻すことも�
   await page.locator('#btn-undo').click();
   await expect(page.locator('.roster-card[data-type="mage"]')).toHaveCount(1);
   await expect(page.locator('.roster-card[data-type="mage"]')).toHaveAttribute('data-rank', '6');
+});
+
+test('呪術師：ショップで雇え、戦闘で敵に呪いをかける（呪いの円・呪いマーク・防御が下がる）', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => __game.setCoins(1000));
+  await page.click('#btn-home-shop');
+  const types = await page.locator('[data-buy-char]').evaluateAll((bs) => bs.map((b) => b.dataset.buyChar));
+  expect(types.indexOf('hexer')).toBe(types.indexOf('warder') + 1);   // next to the warder, under the mage
+  await expect(page.locator('.shop-item').nth(types.indexOf('hexer'))).toContainText(JA['char.hexer']);
+  await page.click('[data-buy-char="hexer"]');
+  await page.click('#btn-modal-close');
+  const hx = page.locator('.roster-card[data-type="hexer"]');
+  await expect(hx).toHaveCount(1);
+  await hx.click();
+  await expect(page.locator('[data-stat="stat.curse"]')).toBeVisible();
+  await page.click('#btn-modal-close');
+  // field: the hexer alone with a tank in front
+  await page.evaluate(() => {
+    const s = __game.store; const h = s.data.roster.find((c) => c.type === 'hexer'), t = s.data.roster.find((c) => c.type === 'shield');
+    h.rank = 20; t.rank = 30; s.data.formation = { [t.id]: 2, [h.id]: 7 }; s.save();
+  });
+  await page.click('#btn-home-start');
+  await page.evaluate(() => { __game.enableTrace(); });
+  await page.click('#btn-fight');
+  await expect(page.locator('#fx .curse-circle').first()).toBeAttached({ timeout: 15_000 });
+  await expect(page.locator('#units .unit.team-enemy.cursed').first()).toBeVisible({ timeout: 5_000 });
+  const r = await page.evaluate(() => {
+    const b = __game.battle; const e = b.units.find((u) => u.team === 'enemy' && b.curseOf(u));
+    return e ? { def: e.def, cur: b.defOf(e) } : null;
+  });
+  if (r) expect(r.cur).toBeLessThan(r.def);
+});
+
+test('呪術師：敵のゴブリン呪術師はステージ35から登場し、味方を呪う', async ({ page }) => {
+  await gotoPrep(page, { stage: 35 });
+  await expect(page.locator('.unit.preview[data-type="hexer"]')).toHaveCount(1);
+  await page.evaluate(() => { for (const c of __game.store.data.roster) c.rank = 40; __game.store.save(); });
+  await page.click('#btn-battle-home'); await page.click('#btn-home-start');
+  await page.evaluate(() => { __game.enableTrace(); });
+  await page.click('#btn-fight');
+  await expect.poll(() => page.evaluate(() => (__game.battle.trace || []).some((e) => e.kind === 'curse' && __game.battle.units.concat(__game.battle.removed).find((u) => u.uid === e.to)?.team === 'ally')), { timeout: 30_000 }).toBe(true);
 });

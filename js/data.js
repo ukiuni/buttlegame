@@ -1,8 +1,8 @@
 // Game data & pure rules (no DOM) — importable from Node tests.
 
-export const TYPES = ['sword', 'mage', 'archer', 'shield', 'healer', 'lancer', 'thief', 'enchanter', 'summoner', 'warder'];
+export const TYPES = ['sword', 'mage', 'archer', 'shield', 'healer', 'lancer', 'thief', 'enchanter', 'summoner', 'warder', 'hexer'];
 // Shop listing order: the defensive classes (tank, ward) sit right under the mage so they are easy to find.
-export const SHOP_ORDER = ['sword', 'mage', 'shield', 'warder', 'archer', 'healer', 'lancer', 'thief', 'enchanter', 'summoner'];
+export const SHOP_ORDER = ['sword', 'mage', 'shield', 'warder', 'hexer', 'archer', 'healer', 'lancer', 'thief', 'enchanter', 'summoner'];
 // Ranks have no upper limit: merging always adds the two ranks together.
 // Enemy ranks are still generated up to ENEMY_MAX_RANK (the stat multiplier covers the rest).
 export const ENEMY_MAX_RANK = 100;
@@ -59,6 +59,9 @@ export const BASE = {
   // warder: an always-on barrier around itself — magic that would hit an ally inside it is nullified
   // (radius 1.6 cells, +0.004 per rank, up to 2.6)
   warder:    { hp: 110, atk: 10, def: 6, range: 2.4, speed: 0.9,  interval: 1.6, ward: { radius: 1.6, perRank: 0.004, max: 2.6 }, wave: 0.35 },
+  // hexer: curses every foe around its target for a while — lowers ATK and magic power a little, and
+  // DEF and magic defence a lot (cuts grow with rank and magic power, up to the caps). A warder's barrier blocks it.
+  hexer:     { hp: 90,  atk: 10, def: 3, range: 3.0, speed: 0.9,  interval: 2.2, curse: { radius: 1.5, dur: 4.5, atk: 0.12, mag: 0.12, def: 0.4, mres: 0.4, perRank: 0.004 }, wave: 0.3, pw: 1.2 },
   // ---- monster-only types (each has its own attack style) ----
   // bat: fast flyer (passes over other units) that ignores the front line and dives at the weakest (lowest HP) target
   bat:      { hp: 70,  atk: 16, def: 2,  range: 1.0, speed: 2.4,  interval: 0.8, assassin: true, fly: true, pw: 1.1 },
@@ -136,21 +139,21 @@ for (const bo of BOSSES) {
 
 // Monster types and the stage where each first appears.
 // warder = Ward Imp: the same barrier as our 魔法防御師 (nullifies OUR magic on monsters inside it)
-export const MONSTER_UNLOCK = { sword: 1, archer: 1, mage: 1, shield: 1, healer: 1, bat: 3, slime: 6, golem: 10, dragon: 15, lich: 20, warder: 25 };
+export const MONSTER_UNLOCK = { sword: 1, archer: 1, mage: 1, shield: 1, healer: 1, bat: 3, slime: 6, golem: 10, dragon: 15, lich: 20, warder: 25, hexer: 35 };
 export const MONSTER_TYPES = Object.keys(MONSTER_UNLOCK);
 const MELEE_FRONT = new Set(['sword', 'shield', 'golem', 'slime', 'bat']);
 
-export const RECRUIT_COST = { sword: 50, mage: 70, archer: 60, shield: 60, healer: 70, lancer: 70, thief: 60, enchanter: 80, summoner: 90, warder: 80 };
+export const RECRUIT_COST = { sword: 50, mage: 70, archer: 60, shield: 60, healer: 70, lancer: 70, thief: 60, enchanter: 80, summoner: 90, warder: 80, hexer: 85 };
 
 export const SLOTS = ['weapon', 'armor', 'accessory'];
 // Weapons come in 4 kinds and each class can only hold its own kind:
 //   blade = warrior weapons (swordsman, tank, thief) — raise ATK
 //   bow   = archer only, spear = lancer only — raise ATK
-//   staff = mage weapons (mage, healer, enchanter, summoner, warder) — raise MAGIC POWER (魔導力), not ATK
+//   staff = mage weapons (mage, healer, enchanter, summoner, warder, hexer) — raise MAGIC POWER (魔導力), not ATK
 // Armour raises DEF (and a little HP); accessories give speed, HP or magic defence (cuts magic damage taken).
 export const WEAPON_KIND = {
   sword: 'blade', shield: 'blade', thief: 'blade', archer: 'bow', lancer: 'spear',
-  mage: 'staff', healer: 'staff', enchanter: 'staff', summoner: 'staff', warder: 'staff',
+  mage: 'staff', healer: 'staff', enchanter: 'staff', summoner: 'staff', warder: 'staff', hexer: 'staff',
 };
 export const WEAPON_KINDS = ['blade', 'bow', 'spear', 'staff'];
 export const ITEMS = {
@@ -214,6 +217,7 @@ export function rankMult(rank) { return 1 + 0.3 * (rank - 1); }
 // Magic power (魔導力) of the mage classes: their spells, heals, buffs, barriers and summons scale with
 // mag / magBase (magBase = the class's own power at this rank; staves add to mag).
 export const MAG_BASE = 20;
+export const CURSE_MAX = { atk: 0.3, mag: 0.3, def: 0.75, mres: 0.75 };
 export function computeStats(type, rank = 1, equip = {}, mult = 1) {
   const b = BASE[type];
   const rm = rankMult(rank) * mult;
@@ -239,6 +243,12 @@ export function computeStats(type, rank = 1, equip = {}, mult = 1) {
     pierce: b.pierce || 0, summon: b.summon || null,
     boss: !!b.boss, magicRes: b.magicRes || 0, multi: b.multi || 0, drain: b.drain || 0, regen: b.regen || 0,
     prey: !!b.prey, charge: b.charge || null, chant: b.chant || 0,
+    // curse cuts: ATK / magic power small, DEF / magic defence large; capped (CURSE_MAX)
+    curse: b.curse ? (() => {
+      const k = (1 + b.curse.perRank * (rank - 1)) * magR;
+      const cap = (v, m) => +Math.min(m, v * k).toFixed(3);
+      return { radius: b.curse.radius, dur: b.curse.dur, atk: cap(b.curse.atk, CURSE_MAX.atk), mag: cap(b.curse.mag, CURSE_MAX.mag), def: cap(b.curse.def, CURSE_MAX.def), mres: cap(b.curse.mres, CURSE_MAX.mres) };
+    })() : null,
     buff: b.buff ? { ...b.buff, amount: +Math.min(BUFF_MAX, (b.buff.base + b.buff.perRank * (rank - 1)) * magR).toFixed(3) } : null,
   };
   for (const slot of SLOTS) {
@@ -302,7 +312,7 @@ function enemyComposition(stage) {
   let ranged = 0;
   // enemies use magic too: from stage 2 every wave has exactly this many mages (about 1 in 8 monsters)
   const mageQuota = stage >= 2 ? Math.max(1, Math.round(count / 8)) : 0;
-  const cap = (t) => (t === 'lich' ? 2 : t === 'mage' ? mageQuota : t === 'warder' ? (count >= 10 ? 2 : 1) : Math.max(2, Math.ceil(count / 4)));
+  const cap = (t) => (t === 'lich' ? 2 : t === 'mage' ? mageQuota : t === 'warder' || t === 'hexer' ? (count >= 10 ? 2 : 1) : Math.max(2, Math.ceil(count / 4)));
   const allowed = (t) => (counts[t] || 0) < cap(t)
     && (MELEE_FRONT.has(t) || ranged < Math.floor(count / 2));
   const pick = () => {

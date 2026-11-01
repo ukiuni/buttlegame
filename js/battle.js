@@ -22,7 +22,7 @@ export function makeUnit({ team, type, rank, equip, cell, mult = 1, charId = nul
     range: st.range, speed: st.speed, interval: st.interval, magic: st.magic, heal: st.heal,
     atk0: computeStats(type, rank, {}, mult).atk,   // attack without equipment (weapons scale magic)
     prey: st.prey, charge: st.charge, chant: st.chant, buff: st.buff, ward: st.ward, guard: st.guard,
-    buffUntil: 0, buffAmt: 0, chargeLeft: 0, chargeDx: 0, chargeDy: 0, chargeHit: null,
+    buffUntil: 0, buffAmt: 0, curse: st.curse, curseUntil: 0, curseAmt: null, chargeLeft: 0, chargeDx: 0, chargeDy: 0, chargeHit: null,
     assassin: st.assassin, fly: st.fly, poison: st.poison, slam: st.slam, stun: st.stun, pierce: st.pierce, summon: st.summon,
     mag: st.mag, magBase: st.magBase, mres: st.mres,
     weapon: equip && equip.weapon && canEquip(type, equip.weapon) ? equip.weapon : null,   // shown on the sprite
@@ -76,6 +76,12 @@ export class Battle {
     }
     const foes = this.enemiesOf(u);
     let t;
+    if (u.curse) {
+      // hexer: the nearest foe that isn't cursed (or whose curse is about to wear off)
+      const fresh = foes.filter((o) => o.curseUntil < this.time + 0.5);
+      const c = this.nearest(u, fresh.length ? fresh : foes);
+      return c ? { target: c, action: 'attack' } : null;
+    }
     if (u.assassin) {
       // bats skip the front line and go for the target with the lowest HP
       t = foes.sort((a, b) => a.hp - b.hp || this.dist(u, a) - this.dist(u, b))[0];
@@ -89,7 +95,30 @@ export class Battle {
   }
 
   // Attack including an enchanter's buff.
-  atkOf(u) { return u.buffUntil > this.time ? Math.round(u.atk * (1 + u.buffAmt)) : u.atk; }
+  // Attack including an enchanter's buff and a hexer's curse.
+  atkOf(u) {
+    let a = u.buffUntil > this.time ? u.atk * (1 + u.buffAmt) : u.atk;
+    const c = this.curseOf(u); if (c) a *= 1 - c.atk;
+    return Math.round(a);
+  }
+  // The curse on a unit while it lasts (null otherwise).
+  curseOf(u) { return u.curseUntil > this.time ? u.curseAmt : null; }
+  // Hexer: curse every foe around the target (a warder's barrier blocks it, like magic).
+  applyCurse(u, center) {
+    const c = u.curse;
+    this.events.push({ type: 'curse', uid: u.uid, x: center.x, y: center.y, r: c.radius });
+    for (const o of this.enemiesOf(u)) {
+      if (o !== center && this.dist(o, center) > c.radius + bodyR(o)) continue;
+      const w = this.wardOf(o);
+      if (w) { this.events.push({ type: 'nullify', uid: o.uid, warder: w.uid, from: u.uid }); continue; }
+      const cur = this.curseOf(o);
+      // curses don't stack: each cut keeps the stronger value, and the time is refreshed
+      o.curseAmt = cur ? { atk: Math.max(cur.atk, c.atk), mag: Math.max(cur.mag, c.mag), def: Math.max(cur.def, c.def), mres: Math.max(cur.mres, c.mres) } : { atk: c.atk, mag: c.mag, def: c.def, mres: c.mres };
+      o.curseUntil = this.time + c.dur;
+      this.events.push({ type: 'cursed', uid: o.uid, from: u.uid });
+      if (this.trace) this.trace.push({ t: this.time, kind: 'curse', from: u.uid, to: o.uid });
+    }
+  }
 
   applyBuff(u) {
     const b = u.buff;
@@ -111,7 +140,11 @@ export class Battle {
     return best;
   }
   // Defence including a nearby shielder's guard (+share of the shielder's defence; does not stack).
-  defOf(u) { const g = this.guardOf(u); return u.def + (g ? Math.round(g.def * g.guard.share) : 0); }
+  defOf(u) {
+    const g = this.guardOf(u); const d = u.def + (g ? Math.round(g.def * g.guard.share) : 0);
+    const c = this.curseOf(u);
+    return c ? Math.round(d * (1 - c.def)) : d;   // cursed: defence drops sharply
+  }
 
   // Damage only applies between opposing teams. Returns damage dealt.
   // Defence reduces damage proportionally: dmg = power * power / (power + def)
@@ -143,7 +176,11 @@ export class Battle {
     return null;
   }
   // Magic power including an enchanter's buff (mage classes only).
-  magOf(u) { return u.buffUntil > this.time ? u.mag * (1 + u.buffAmt) : u.mag; }
+  magOf(u) {
+    let m = u.buffUntil > this.time ? u.mag * (1 + u.buffAmt) : u.mag;
+    const c = this.curseOf(u); if (c) m *= 1 - c.mag;
+    return m;
+  }
   // Spell strength: mage classes scale with magic power (staves, buffs); monsters with their attack.
   magicPct(u) {
     return u.magBase ? u.magic.pct * (this.magOf(u) / u.magBase) : u.magic.pct * (this.atkOf(u) / Math.max(1, u.atk0));
@@ -161,8 +198,11 @@ export class Battle {
         continue;
       }
       // bosses resist magic (magicRes = share of the spell they shrug off)
-      // magic defence (accessories) and boss resistance cut the share
-      const dmg = Math.max(1, Math.round(o.maxHp * pct * (1 - (o.magicRes || 0)) * (1 - (o.mres || 0)) * (0.95 + this.rnd() * 0.1)));
+      // magic defence (accessories) and boss resistance cut the share; a curse strips most of that away
+      // and makes the target take extra magic damage on top
+      const cm = (this.curseOf(o) || { mres: 0 }).mres;
+      const res = (1 - (o.magicRes || 0) * (1 - cm)) * (1 - (o.mres || 0) * (1 - cm)) * (1 + 0.5 * cm);
+      const dmg = Math.max(1, Math.round(o.maxHp * pct * res * (0.95 + this.rnd() * 0.1)));
       o.hp = Math.max(0, o.hp - dmg);
       this.events.push({ type: 'damage', uid: o.uid, amount: dmg, from: u.uid, kind: 'magic' });
       if (this.trace) this.trace.push({ t: this.time, kind: 'damage', magic: true, from: u.uid, to: o.uid, amount: dmg, hp: o.hp });
@@ -326,6 +366,7 @@ export class Battle {
     if (u.action === 'summon') { u.casts++; this.doSummon(u, tgt); return; }
     u.casts++;
     if (u.magic) { this.applyMagic(u, tgt); return; }
+    if (u.curse) this.applyCurse(u, tgt);   // then a weak hit on the target
     this.applyDamage(u, tgt);
     if (u.multi > 1) {
       // volley: the same shot also hits the next closest enemies around the target
