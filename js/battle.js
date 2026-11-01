@@ -20,6 +20,7 @@ export function makeUnit({ team, type, rank, equip, cell, mult = 1, charId = nul
     prey: st.prey, charge: st.charge, chant: st.chant, buff: st.buff, ward: st.ward, guard: st.guard,
     buffUntil: 0, buffAmt: 0, chargeLeft: 0, chargeDx: 0, chargeDy: 0, chargeHit: null,
     assassin: st.assassin, fly: st.fly, poison: st.poison, slam: st.slam, stun: st.stun, pierce: st.pierce, summon: st.summon,
+    boss: st.boss, magicRes: st.magicRes, multi: st.multi, drain: st.drain, regen: st.regen,
     mult, casts: 0, summoner: null,
     poisonDps: 0, poisonUntil: 0, poisonTick: 0, stunUntil: 0,
     cd: 0.3 + (cell % grid.cols) * 0.05,
@@ -55,7 +56,7 @@ export class Battle {
   }
 
   chooseTarget(u) {
-    if (u.type === 'healer') {
+    if (u.heal > 0) {   // healers (and the mushroom boss) mend hurt allies first
       const hurt = this.alliesOf(u).filter((a) => a.hp < a.maxHp * 0.95)
         .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
       if (hurt) return { target: hurt, action: 'heal' };
@@ -117,6 +118,10 @@ export class Battle {
     this.events.push({ type: 'damage', uid: target.uid, amount: dmg, from: attacker.uid });
     if (this.trace) this.trace.push({ t: this.time, kind: 'damage', from: attacker.uid, to: target.uid, amount: dmg, hp: target.hp });
     if (target.hp <= 0) this.kill(target);
+    if (attacker.drain && this.alive(attacker)) {   // dark / vampire bosses heal by a share of the damage dealt
+      const h = Math.min(attacker.maxHp - attacker.hp, Math.round(dmg * attacker.drain));
+      if (h > 0) { attacker.hp += h; this.events.push({ type: 'heal', uid: attacker.uid, amount: h, kind: 'drain' }); }
+    }
     return dmg;
   }
 
@@ -142,7 +147,8 @@ export class Battle {
         if (this.trace) this.trace.push({ t: this.time, kind: 'nullify', from: u.uid, to: o.uid, warder: w.uid });
         continue;
       }
-      const dmg = Math.max(1, Math.round(o.maxHp * pct * (0.95 + this.rnd() * 0.1)));
+      // bosses resist magic (magicRes = share of the spell they shrug off)
+      const dmg = Math.max(1, Math.round(o.maxHp * pct * (1 - (o.magicRes || 0)) * (0.95 + this.rnd() * 0.1)));
       o.hp = Math.max(0, o.hp - dmg);
       this.events.push({ type: 'damage', uid: o.uid, amount: dmg, from: u.uid, kind: 'magic' });
       if (this.trace) this.trace.push({ t: this.time, kind: 'damage', magic: true, from: u.uid, to: o.uid, amount: dmg, hp: o.hp });
@@ -212,6 +218,8 @@ export class Battle {
           if (!this.alive(u)) continue;
         }
       }
+      // holy bosses regenerate a share of their max HP every second
+      if (u.regen && u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * u.regen * dt);
       // stunned units can't act
       if (u.stunUntil > this.time) { this.setState(u, 'idle'); continue; }
       u.cd -= dt;
@@ -304,6 +312,11 @@ export class Battle {
     u.casts++;
     if (u.magic) { this.applyMagic(u, tgt); return; }
     this.applyDamage(u, tgt);
+    if (u.multi > 1) {
+      // volley: the same shot also hits the next closest enemies around the target
+      const extra = this.enemiesOf(u).filter((o) => o !== tgt).sort((a, b) => this.dist(a, tgt) - this.dist(b, tgt)).slice(0, u.multi - 1);
+      for (const o of extra) { this.events.push({ type: 'volley', uid: u.uid, target: o.uid }); this.applyDamage(u, o, this.atkOf(u) * 0.7); }
+    }
     if (u.poison && this.alive(tgt)) {
       // (re)apply poison: deals atk * poison per second for 4s
       tgt.poisonDps = Math.max(tgt.poisonUntil > this.time ? tgt.poisonDps : 0, this.atkOf(u) * u.poison);
@@ -316,7 +329,7 @@ export class Battle {
       const hit = [tgt, ...this.enemiesOf(u).filter((o) => o !== tgt && this.dist(o, tgt) <= u.slam)];
       for (const o of hit) {
         if (o !== tgt) this.applyDamage(u, o, this.atkOf(u) * 0.6);
-        if (this.alive(o)) { o.stunUntil = this.time + u.stun; this.events.push({ type: 'stun', uid: o.uid }); }
+        if (u.stun > 0 && this.alive(o)) { o.stunUntil = this.time + u.stun; this.events.push({ type: 'stun', uid: o.uid }); }
       }
     }
     if (u.pierce) {
@@ -333,7 +346,7 @@ export class Battle {
 
   separate() {
     const list = this.units.filter((u) => this.alive(u));
-    const minD = 0.62;
+    const minD = 0.62, bossD = 0.9;   // bosses are big: others keep further away from them
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
         const a = list[i], b = list[j];
@@ -341,9 +354,10 @@ export class Battle {
         if (a.fly !== b.fly || a.state === 'charge' || b.state === 'charge') continue;
         let dx = b.x - a.x, dy = b.y - a.y;
         let d = Math.hypot(dx, dy);
-        if (d >= minD) continue;
+        const need = a.boss || b.boss ? bossD : minD;
+        if (d >= need) continue;
         if (d < 1e-4) { dx = (a.uid % 2 ? 1 : -1) * 0.01; dy = 0; d = 0.01; }
-        const push = (minD - d) / 2;
+        const push = (need - d) / 2;
         const ax = a.state === 'attack' ? 0.3 : 1, bx = b.state === 'attack' ? 0.3 : 1;
         a.x -= (dx / d) * push * ax; a.y -= (dy / d) * push * ax;
         b.x += (dx / d) * push * bx; b.y += (dy / d) * push * bx;

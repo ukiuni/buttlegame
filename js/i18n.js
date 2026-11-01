@@ -1,4 +1,5 @@
 // Localization (no DOM at import time).
+import { BOSSES, BOSS_BODIES, BOSS_ELEMENTS } from './data.js';
 export const LANGS = { ja: '日本語', en: 'English', zh: '中文', ko: '한국어' };
 
 export const STRINGS = {
@@ -351,6 +352,197 @@ export const STRINGS = {
     'result.home': '홈으로',
   },
 };
+
+// ---- boss names & descriptions (50 bosses = 10 bodies x 5 elements), generated for every language ----
+const BOSS_STRINGS = {
+ "ja": {
+  "fmt": "{elem}{body}",
+  "desc": "BOSS：{body}／{elem}／魔法ダメージ半減",
+  "appear": "ボス出現！",
+  "mark": "BOSS",
+  "elems": [
+   "紅蓮の",
+   "氷獄の",
+   "雷鳴の",
+   "冥闇の",
+   "聖光の"
+  ],
+  "traits": [
+   "攻撃力が高い",
+   "防御力が非常に高い",
+   "攻撃が速い",
+   "与えたダメージでHPを吸収",
+   "HPが徐々に回復"
+  ],
+  "bodies": [
+   "ゴブリンキング",
+   "オークジェネラル",
+   "リザードレンジャー",
+   "スライムロード",
+   "ギガゴーレム",
+   "ヴァンパイアバット",
+   "スケルトンロード",
+   "マッシュルームロード",
+   "ドラゴンロード",
+   "リッチキング"
+  ],
+  "bdesc": [
+   "大剣でなぎ払い、周りもまとめて斬る",
+   "鉄壁：広い範囲の仲間の防御力を大きく上げる",
+   "連射：一度に3体を射抜く",
+   "毒の飛沫で周りも攻撃",
+   "地震：広い範囲にダメージ＋長いスタン",
+   "飛んでHPの低い相手を襲い、血を吸って回復",
+   "骸骨兵を呼び出す",
+   "仲間を回復し、胞子の魔法で範囲攻撃",
+   "長く伸びる炎のブレスで列ごと焼く",
+   "広い範囲の闇魔法と骸骨兵の召喚"
+  ]
+ },
+ "en": {
+  "fmt": "{elem} {body}",
+  "desc": "BOSS: {body} / {elem} / halves magic damage",
+  "appear": "A boss appears!",
+  "mark": "BOSS",
+  "elems": [
+   "Crimson",
+   "Frost",
+   "Thunder",
+   "Abyssal",
+   "Radiant"
+  ],
+  "traits": [
+   "high attack",
+   "very high defence",
+   "fast attacks",
+   "drains HP from damage dealt",
+   "regenerates HP"
+  ],
+  "bodies": [
+   "Goblin King",
+   "Orc General",
+   "Lizard Ranger",
+   "Slime Lord",
+   "Giga Golem",
+   "Vampire Bat",
+   "Skeleton Lord",
+   "Fungus Lord",
+   "Dragon Lord",
+   "Lich King"
+  ],
+  "bdesc": [
+   "Cleaving swings hit around the target",
+   "Iron wall: greatly raises the defence of allies in a wide area",
+   "Volley: hits 3 targets at once",
+   "Poison splash hits around the target",
+   "Earthquake: wide area damage + long stun",
+   "Flies at the weakest target and drinks blood to heal",
+   "Raises skeleton soldiers",
+   "Heals allies; spore magic hits an area",
+   "Long fire breath burns a whole line",
+   "Wide dark magic and skeleton summons"
+  ]
+ },
+ "zh": {
+  "fmt": "{elem}{body}",
+  "desc": "BOSS：{body}／{elem}／魔法伤害减半",
+  "appear": "BOSS 出现！",
+  "mark": "BOSS",
+  "elems": [
+   "红莲",
+   "冰狱",
+   "雷鸣",
+   "冥暗",
+   "圣光"
+  ],
+  "traits": [
+   "攻击力高",
+   "防御力极高",
+   "攻击迅速",
+   "造成伤害时吸取生命",
+   "生命逐渐恢复"
+  ],
+  "bodies": [
+   "哥布林王",
+   "兽人将军",
+   "蜥蜴游侠",
+   "史莱姆领主",
+   "巨型魔像",
+   "吸血蝙蝠",
+   "骷髅领主",
+   "蘑菇领主",
+   "龙王",
+   "巫妖王"
+  ],
+  "bdesc": [
+   "横扫攻击，波及目标周围",
+   "铁壁：大幅提升大范围同伴的防御力",
+   "连射：一次射中3个目标",
+   "毒液飞溅波及周围",
+   "地震：大范围伤害＋长时间眩晕",
+   "飞行突袭生命最低的目标，吸血恢复",
+   "召唤骷髅兵",
+   "治疗同伴，孢子魔法范围攻击",
+   "长距离火焰吐息灼烧整列",
+   "大范围暗魔法并召唤骷髅兵"
+  ]
+ },
+ "ko": {
+  "fmt": "{elem} {body}",
+  "desc": "BOSS: {body} / {elem} / 마법 피해 절반",
+  "appear": "보스 출현!",
+  "mark": "BOSS",
+  "elems": [
+   "홍련의",
+   "빙옥의",
+   "뇌명의",
+   "명암의",
+   "성광의"
+  ],
+  "traits": [
+   "공격력이 높음",
+   "방어력이 매우 높음",
+   "공격이 빠름",
+   "준 피해로 HP 흡수",
+   "HP가 서서히 회복"
+  ],
+  "bodies": [
+   "고블린 킹",
+   "오크 장군",
+   "리자드 레인저",
+   "슬라임 로드",
+   "기가 골렘",
+   "뱀파이어 배트",
+   "스켈레톤 로드",
+   "버섯 로드",
+   "드래곤 로드",
+   "리치 킹"
+  ],
+  "bdesc": [
+   "대검으로 휩쓸어 주변까지 벤다",
+   "철벽: 넓은 범위 동료의 방어력을 크게 올림",
+   "연사: 한 번에 3명을 맞힘",
+   "독 비말로 주변도 공격",
+   "지진: 넓은 범위 피해 + 긴 기절",
+   "날아서 HP가 낮은 적을 습격하고 흡혈로 회복",
+   "스켈레톤 병사를 소환",
+   "동료를 회복하고 포자 마법으로 범위 공격",
+   "길게 뻗는 화염 브레스로 일렬을 태움",
+   "광범위 암흑 마법과 스켈레톤 소환"
+  ]
+ }
+};
+for (const [lang, b] of Object.entries(BOSS_STRINGS)) {
+  const S = STRINGS[lang];
+  S['boss.appear'] = b.appear; S['boss.mark'] = b.mark;
+  BOSS_ELEMENTS.forEach((e, i) => { S['bossElem.' + e.id] = b.elems[i]; S['bossTrait.' + e.id] = b.traits[i]; });
+  BOSS_BODIES.forEach((d, i) => { S['bossBody.' + d.id] = b.bodies[i]; S['bossBodyDesc.' + d.id] = b.bdesc[i]; });
+  for (const bo of BOSSES) {
+    const fill = (f, p) => f.replace(/\{(\w+)\}/g, (_, k) => p[k]);
+    S['mon.' + bo.type] = fill(b.fmt, { elem: S['bossElem.' + bo.element], body: S['bossBody.' + bo.body] });
+    S['monDesc.' + bo.type] = fill(b.desc, { body: S['bossBodyDesc.' + bo.body], elem: S['bossTrait.' + bo.element] });
+  }
+}
 
 let current = 'ja';
 export function setLang(l) { if (STRINGS[l]) current = l; return current; }

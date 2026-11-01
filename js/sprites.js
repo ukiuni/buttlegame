@@ -1,5 +1,6 @@
 // Procedural 16-bit-RPG style pixel sprites. Each sheet: 7 frames of 24x24.
 // Frames: 0 idle, 1 walk A, 2 walk B, 3 attack wind-up, 4 attack strike, 5 hurt, 6 down
+import { BOSSES } from './data.js';
 export const SIZE = 24;
 export const FRAMES = 7;
 const OUTLINE = '#1b1424';
@@ -85,6 +86,29 @@ export const CHARS = {
   mon_warder:  { skin: '#5a78e0', skinS: '#3448a0', eye: '#ffe040', head: 'goblin', body: 'robe', tunic: '#7a2a5a', tunicS: '#4c1438', belt: '#ff60c0', boot: '#3448a0', weapon: 'staff', orb: '#ff60e0' },
   mon_healer:  { skin: '#f0dcc0', skinS: '#c0a080', eye: '#20142a', head: 'mushroom', cap: '#d83838', capS: '#982020', body: 'robe', tunic: '#80b848', tunicS: '#507828', belt: '#f0dcc0', boot: '#c0a080', weapon: 'rod', orb: '#ff90e0' },
 };
+
+// ---------------- bosses: 10 bodies x 5 element palettes ----------------
+const BOSS_PAL = {
+  fire:    { m: '#d83a20', s: '#8a1c10', l: '#ffb040', a: '#ffe060', e: '#fff060', d: '#3a1410' },
+  ice:     { m: '#5ab0e8', s: '#2a6aa8', l: '#d0f0ff', a: '#ffffff', e: '#40ffff', d: '#1a2c48' },
+  thunder: { m: '#e8c020', s: '#9a7a10', l: '#fff080', a: '#7090ff', e: '#ffffff', d: '#2c2a40' },
+  dark:    { m: '#6a2a9a', s: '#36124e', l: '#b070f0', a: '#ff40a0', e: '#ff3040', d: '#1a0c24' },
+  holy:    { m: '#f0ece0', s: '#b8b0a0', l: '#ffffff', a: '#f0c040', e: '#40c0ff', d: '#6a6050' },
+};
+const BOSS_BODY = {
+  goblin:   (c) => ({ skin: c.m, skinS: c.s, eye: c.e, head: 'goblin', body: 'tunic', tunic: c.d, tunicS: '#100810', belt: c.a, pants: c.s, boot: c.d, weapon: 'cleaver', bare: true }),
+  orc:      (c) => ({ skin: c.l, skinS: c.s, eye: c.e, head: 'orc', metal: c.s, metalS: c.d, horn: c.a, body: 'tunic', tunic: c.m, tunicS: c.s, belt: c.a, pants: c.d, boot: c.d, weapon: 'shield', shield: c.m, shieldS: c.s, emblem: c.a, round: true, bare: true }),
+  lizard:   (c) => ({ skin: c.m, skinS: c.s, eye: c.e, head: 'lizard', spine: c.a, body: 'tunic', tunic: c.d, tunicS: '#100810', belt: c.a, pants: c.m, boot: c.s, weapon: 'bow', tail: true, bare: true }),
+  slime:    (c) => ({ custom: 'slime', body: c.m, bodyS: c.s, light: c.l, eye: '#20142a', drip: c.a }),
+  golem:    (c) => ({ custom: 'golem', stone: c.m, stoneS: c.s, stoneL: c.l, moss: c.a, eye: c.e }),
+  bat:      (c) => ({ custom: 'bat', body: c.s, bodyS: c.d, wing: c.m, wingS: c.s, eye: c.e, fang: '#ffffff' }),
+  skeleton: (c) => ({ skin: c.l, skinS: c.s, eye: c.e, head: 'bones', body: 'tunic', tunic: c.l, tunicS: c.s, belt: c.a, pants: c.l, boot: c.s, weapon: 'sword', bare: true, ribs: c.d }),
+  mushroom: (c) => ({ skin: '#f0dcc0', skinS: '#c0a080', eye: '#20142a', head: 'mushroom', cap: c.m, capS: c.s, body: 'robe', tunic: c.d, tunicS: '#100810', belt: c.a, boot: '#c0a080', weapon: 'rod', orb: c.a }),
+  dragon:   (c) => ({ custom: 'dragon', body: c.m, bodyS: c.s, belly: c.l, wing: c.s, wingS: c.d, eye: c.e, horn: c.a }),
+  lich:     (c) => ({ skin: c.l, skinS: c.s, eye: c.e, head: 'lich', hood: c.m, hoodS: c.s, crown: c.a, body: 'robe', tunic: c.m, tunicS: c.s, belt: c.a, boot: c.d, weapon: 'staff', orb: c.e }),
+};
+for (const b of BOSSES) CHARS['mon_' + b.type] = BOSS_BODY[b.body](BOSS_PAL[b.element]);
+export const BOSS_GLOW = Object.fromEntries(Object.entries(BOSS_PAL).map(([k, c]) => [k, k === 'holy' ? c.a : c.m]));
 
 function drawHead(p, k, by) {
   const y0 = 5 + by;

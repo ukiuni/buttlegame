@@ -1,9 +1,9 @@
-import { TYPES, SHOP_ORDER, MONSTER_TYPES, ITEMS, SLOTS, RECRUIT_COST, fmtRank, gridFor, SMALL_GRID, itemStats, parseItem,
+import { TYPES, SHOP_ORDER, MONSTER_TYPES, isBoss, bossInfo, baseType, bossForStage, ITEMS, SLOTS, RECRUIT_COST, fmtRank, gridFor, SMALL_GRID, itemStats, parseItem,
   computeStats, enemyWave, cellToField, rewardCoins } from './data.js';
 import { Battle, makeUnit, HIT_TIME } from './battle.js';
 import { Store } from './store.js';
 import { t, setLang, getLang, detectLang, LANGS } from './i18n.js';
-import { sheet, spriteKey, icon, FRAMES } from './sprites.js';
+import { sheet, spriteKey, icon, FRAMES, BOSS_GLOW } from './sprites.js';
 import { Bgm } from './audio.js';
 
 const OY = 0.4; // top padding (cells) so front sprites are not clipped
@@ -237,6 +237,7 @@ function goHome() {
 function renderHome() {
   $('#home-coins').textContent = store.data.coins;
   $('#home-stage').textContent = t('common.stage', { n: store.data.stage });
+  renderBossTag('#home-boss');
   $('#roster-title').textContent = t('home.roster', { n: store.data.roster.length });
   const roster = $('#roster'); roster.innerHTML = '';
   const sorted = [...store.data.roster].sort((a, b) => TYPES.indexOf(a.type) - TYPES.indexOf(b.type) || b.rank - a.rank);
@@ -440,6 +441,12 @@ function layoutField() {
 }
 
 function unitSize() { return Math.round(G.cs * 1.15); }
+// "BOSS" tag next to the stage number on boss stages (every 10th stage)
+function renderBossTag(sel) {
+  const b = bossForStage(store.data.stage), e = $(sel);
+  e.classList.toggle('hidden', !b);
+  if (b) { e.textContent = t('boss.mark'); e.title = charName(b.type, 'enemy'); }
+}
 
 function makeUnitEl(team, type, rank) {
   const size = unitSize();
@@ -451,6 +458,12 @@ function makeUnitEl(team, type, rank) {
   u.appendChild(el('div', 'guard-mark'));   // shown while a shielder guards this unit
   const rk = el('div', 'rank'); rk.textContent = `★${fmtRank(rank)}`; if (rk.textContent.length >= 5) rk.classList.add('long'); u.appendChild(rk);
   u.dataset.team = team; u.dataset.type = type; u.dataset.rank = rank;
+  const boss = bossInfo(type);
+  if (boss) {   // drawn about twice as big, glowing in its element colour, with a BOSS label
+    u.classList.add('boss'); u.dataset.boss = boss.index; u.dataset.element = boss.element;
+    u.style.setProperty('--boss-glow', BOSS_GLOW[boss.element]);
+    const tag = el('div', 'boss-label'); tag.textContent = t('boss.mark'); u.appendChild(tag);
+  }
   u._sprite = s; u._fill = fill;
   if (team === 'enemy') u.classList.add('facing-left');
   return u;
@@ -478,6 +491,7 @@ function enterPrep() {
 
 function renderTopbar() {
   $('#battle-stage').textContent = t('common.stage', { n: store.data.stage });
+  renderBossTag('#battle-boss');
   $('#battle-coins').textContent = store.data.coins;
 }
 
@@ -677,6 +691,7 @@ function startBattle() {
   G.unitEls.clear();
   layoutField();
   renderBattle();
+  bossBanner();
   startLoop();
 }
 
@@ -732,7 +747,8 @@ function clearAuras() { $('#auras').innerHTML = ''; G.auraEls.clear(); }
 // colour per caster: our mage = gold, enemy mage = violet, lich = green, summoner = cyan
 function magicColor(a) {
   if (!a) return 'gold';
-  return a.type === 'lich' ? 'necro' : a.type === 'summoner' ? 'arcane' : a.team === 'enemy' ? 'violet' : 'gold';
+  const bt = baseType(a.type);
+  return bt === 'lich' ? 'necro' : bt === 'summoner' ? 'arcane' : a.team === 'enemy' ? 'violet' : 'gold';
 }
 // element at field position with a lifetime scaled by the battle speed
 // (at x2 / x4 the effects speed up too, but never more than 2x, so the area stays readable)
@@ -774,6 +790,24 @@ function magicImpact(ev, a) {
   Object.assign(p.style, { width: w + 'px', height: h + 'px', margin: `${-h}px 0 0 ${-w / 2}px` });
 }
 
+function shootProj(kind, a, tg, travel) {
+  const hy = -0.35;
+  const p = fxAt('proj ' + kind, a.x, a.y + hy);
+  if (kind === 'arrow') p.style.transform = `rotate(${Math.atan2(tg.y - a.y, tg.x - a.x)}rad)`;
+  p.style.transitionDuration = travel + 'ms';
+  requestAnimationFrame(() => requestAnimationFrame(() => { p.style.left = tg.x * G.cs + 'px'; p.style.top = (tg.y + hy + OY) * G.cs + 'px'; }));
+}
+// Boss stages: a banner with the boss's name when the battle starts.
+function bossBanner() {
+  const b = bossForStage(store.data.stage); if (!b) return;
+  const e = el('div', 'boss-banner', { 'data-testid': 'boss-banner' });
+  e.style.setProperty('--boss-glow', BOSS_GLOW[b.element]);
+  const s1 = el('div', 'boss-banner-sub'); s1.textContent = t('boss.appear');
+  const s2 = el('div', 'boss-banner-name'); s2.textContent = charName(b.type, 'enemy');
+  e.append(s1, s2); $('#screen-battle').appendChild(e);
+  setTimeout(() => e.remove(), 2400);
+}
+
 function handleEvents(b) {
   for (const ev of b.events) {
     const u = ev.uid ? (b.get(ev.uid) || b.removed.find((r) => r.uid === ev.uid)) : null;
@@ -785,15 +819,13 @@ function handleEvents(b) {
         if (ev.action === 'summon') { fxAt('summon-circle', a.x, a.y + 0.2); break; }
         if (ev.action === 'buff') { fxAt('buff-ring', a.x, a.y + 0.1); break; }
         if (ev.action === 'charge') break; // lancer wind-up is shown by its pose
-        if (a.type === 'dragon') break; // breath is drawn on the 'breath' event
+        const bt = baseType(a.type);   // bosses use their base monster's effects
+        if (a.pierce) break; // breath is drawn on the 'breath' event
         if (a.magic && ev.action === 'attack') { magicCast(a, tg); break; } // area magic: rune circle, then light pillar
-        if (['archer', 'mage', 'healer', 'lich', 'summoner', 'enchanter', 'warder'].includes(a.type)) {
-          let kind = a.type === 'archer' ? 'arrow' : a.type === 'mage' ? (a.team === 'ally' ? 'fire' : 'dark') : a.type === 'lich' ? 'necro'
-            : a.type === 'summoner' || a.type === 'warder' ? 'arcane' : a.type === 'enchanter' ? 'spark' : 'heal';
-          const p = fxAt('proj ' + kind, a.x, a.y + hy);
-          if (kind === 'arrow') p.style.transform = `rotate(${Math.atan2(tg.y - a.y, tg.x - a.x)}rad)`;
-          p.style.transitionDuration = travel + 'ms';
-          requestAnimationFrame(() => requestAnimationFrame(() => { p.style.left = tg.x * G.cs + 'px'; p.style.top = (tg.y + hy + OY) * G.cs + 'px'; }));
+        if (['archer', 'mage', 'healer', 'lich', 'summoner', 'enchanter', 'warder'].includes(bt)) {
+          const kind = bt === 'archer' ? 'arrow' : bt === 'mage' ? (a.team === 'ally' ? 'fire' : 'dark') : bt === 'lich' ? 'necro'
+            : bt === 'summoner' || bt === 'warder' ? 'arcane' : bt === 'enchanter' ? 'spark' : 'heal';
+          shootProj(kind, a, tg, travel);
         } else {
           setTimeout(() => fxAt('slash', tg.x, tg.y + hy), travel);
         }
@@ -819,7 +851,8 @@ function handleEvents(b) {
         e.style.transform = `rotate(${Math.atan2(ev.y2 - a.y, ev.x2 - a.x)}rad)`;
         break;
       }
-      case 'slam': fxAt('quake', ev.x, ev.y); break;
+      case 'slam': { const q = fxAt('quake', ev.x, ev.y); if (u && u.slam > 1.2) q.classList.add('big'); break; }
+      case 'volley': { const a = b.get(ev.uid), tg = b.get(ev.target); if (a && tg) shootProj('arrow', a, tg, (HIT_TIME / G.speed) * 1000 * 0.6); break; }
       case 'nullify': {   // magic hit a barrier: the dome flashes and the target shows "NULL"
         const a = G.auraEls.get(ev.warder);
         if (a) { a.classList.remove('block'); void a.offsetWidth; a.classList.add('block'); }

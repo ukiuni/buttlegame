@@ -74,6 +74,66 @@ export const BASE = {
   skeleton: { hp: 60,  atk: 14, def: 2,  range: 1.1, speed: 1.4,  interval: 1.0 },
 };
 
+// ---- bosses ----
+// Every BOSS_EVERY stages a big boss joins the wave. 50 bosses = 10 bodies x 5 elements, in order:
+// stages 10-100 meet every body with the 1st element, 110-200 with the 2nd, ... (after stage 500 they repeat).
+// A boss takes its attack style from its body's base monster, made much bigger (hp / atk / def multipliers,
+// a wider reach for its special), and gets one extra trait from its element. Bosses resist magic
+// (magic that cuts a share of max HP would otherwise melt them).
+export const BOSS_EVERY = 10;
+export const BOSS_MAGIC_RES = 0.5;
+export const BOSS_BODIES = [
+  { id: 'goblin',   base: 'sword',    hp: 6, atk: 2.0, def: 1.5, slam: 0.9, stun: 0 },             // cleaving swings hit around the target
+  { id: 'orc',      base: 'shield',   hp: 6, atk: 1.8, def: 1.6, guard: { radius: 2.4, share: 0.5 } }, // guards the whole wave
+  { id: 'lizard',   base: 'archer',   hp: 5, atk: 2.0, def: 1.3, multi: 3 },                         // volley: 3 targets per shot
+  { id: 'slime',    base: 'slime',    hp: 6, atk: 2.0, def: 1.4, slam: 0.9, stun: 0 },               // poison splash
+  { id: 'golem',    base: 'golem',    hp: 6, atk: 1.8, def: 1.5, slam: 1.6, stun: 1.0 },             // huge quake
+  { id: 'bat',      base: 'bat',      hp: 5, atk: 2.2, def: 1.3, drain: 0.3 },                       // dives at the weakest and drinks blood
+  { id: 'skeleton', base: 'skeleton', hp: 6, atk: 2.0, def: 1.4, summon: 'skeleton' },               // raises skeletons
+  { id: 'mushroom', base: 'healer',   hp: 6, atk: 1.8, def: 1.4, magic: { pct: 0.06, perRank: 0.0005, max: 0.18, radius: 1.4 } }, // heals, else spores
+  { id: 'dragon',   base: 'dragon',   hp: 6, atk: 2.0, def: 1.4, pierce: 3.2 },                      // long fire breath
+  { id: 'lich',     base: 'lich',     hp: 5, atk: 1.8, def: 1.4, magic: { pct: 0.08, perRank: 0.0006, max: 0.22, radius: 1.6 } }, // big dark magic + skeletons
+];
+// element traits: fire = stronger attacks, ice = thick armour, thunder = fast attacks,
+// dark = drains HP from damage dealt, holy = regenerates HP over time
+export const BOSS_ELEMENTS = [
+  { id: 'fire',    atk: 1.3, pw: 1 },
+  { id: 'ice',     def: 1.8, hp: 1.1, pw: 1.15 },
+  { id: 'thunder', interval: 0.7, pw: 1 },
+  { id: 'dark',    drain: 0.35, pw: 1.15 },
+  { id: 'holy',    regen: 0.012, pw: 1.2 },
+];
+export const BOSS_COUNT = BOSS_BODIES.length * BOSS_ELEMENTS.length;   // 50
+export const BOSSES = [];
+for (let i = 0; i < BOSS_COUNT; i++) {
+  const body = BOSS_BODIES[i % BOSS_BODIES.length], elem = BOSS_ELEMENTS[Math.floor(i / BOSS_BODIES.length)];
+  BOSSES.push({ index: i, type: 'boss' + i, body: body.id, element: elem.id, base: body.base });
+}
+export const isBoss = (type) => /^boss\d+$/.test(type || '');
+export const bossInfo = (type) => (isBoss(type) ? BOSSES[+type.slice(4)] : null);
+// The monster whose attack style (and attack effects) a unit uses.
+export const baseType = (type) => (isBoss(type) ? BOSSES[+type.slice(4)].base : type);
+export const isBossStage = (stage) => stage > 0 && stage % BOSS_EVERY === 0;
+export function bossForStage(stage) {
+  return isBossStage(stage) ? BOSSES[(stage / BOSS_EVERY - 1) % BOSS_COUNT] : null;
+}
+for (const bo of BOSSES) {
+  const b = BASE[bo.base], body = BOSS_BODIES.find((x) => x.id === bo.body), el = BOSS_ELEMENTS.find((x) => x.id === bo.element);
+  const st = {
+    ...b,
+    hp: Math.round(b.hp * body.hp * (el.hp || 1)), atk: Math.round(b.atk * body.atk * (el.atk || 1)),
+    def: Math.round(Math.max(4, b.def) * body.def * (el.def || 1)),
+    interval: +(b.interval * (el.interval || 1)).toFixed(3),
+    range: b.range + (b.range < 1.5 ? 0.25 : 0.4),
+    boss: true, magicRes: BOSS_MAGIC_RES,
+    pw: +((b.pw || 1) * 1.2 * el.pw).toFixed(3),
+  };
+  for (const k of ['slam', 'stun', 'guard', 'multi', 'drain', 'summon', 'magic', 'pierce']) if (body[k] !== undefined) st[k] = body[k];
+  if (el.drain) st.drain = Math.max(st.drain || 0, el.drain);
+  if (el.regen) st.regen = el.regen;
+  BASE[bo.type] = st;
+}
+
 // Monster types and the stage where each first appears.
 // warder = Ward Imp: the same barrier as our 魔法防御師 (nullifies OUR magic on monsters inside it)
 export const MONSTER_UNLOCK = { sword: 1, archer: 1, mage: 1, shield: 1, healer: 1, bat: 3, slime: 6, golem: 10, dragon: 15, lich: 20, warder: 25 };
@@ -131,6 +191,7 @@ export function computeStats(type, rank = 1, equip = {}, mult = 1) {
     ward: b.ward ? { radius: +Math.min(b.ward.max, b.ward.radius + b.ward.perRank * (rank - 1)).toFixed(3) } : null,
     assassin: !!b.assassin, fly: !!b.fly, poison: b.poison || 0, slam: b.slam || 0, stun: b.stun || 0,
     pierce: b.pierce || 0, summon: b.summon || null,
+    boss: !!b.boss, magicRes: b.magicRes || 0, multi: b.multi || 0, drain: b.drain || 0, regen: b.regen || 0,
     prey: !!b.prey, charge: b.charge || null, chant: b.chant || 0,
     buff: b.buff ? { ...b.buff, amount: +Math.min(BUFF_MAX, b.buff.base + b.buff.perRank * (rank - 1)).toFixed(3) } : null,
   };
@@ -145,7 +206,8 @@ export function computeStats(type, rank = 1, equip = {}, mult = 1) {
   return s;
 }
 
-export function rewardCoins(stage, win) { return win ? 40 + stage * 15 : 5 + stage * 2; }
+// Beating a boss stage pays double.
+export function rewardCoins(stage, win) { return win ? (40 + stage * 15) * (isBossStage(stage) ? 2 : 1) : 5 + stage * 2; }
 
 // Merging adds the two ranks together (★3 + ★5 = ★8), with no upper limit.
 export function mergedRank(a, b) { return a + b; }
@@ -208,7 +270,8 @@ function enemyComposition(stage) {
   const avgRank = Math.max(1, Math.min(ENEMY_MAX_RANK, 1 + (rm - 1) / 0.3));
   const newcomer = pool.find((t) => MONSTER_UNLOCK[t] === stage && stage > 1);
   const list = [];
-  for (let i = 0; i < count; i++) {
+  const boss = bossForStage(stage);
+  for (let i = 0; i < count - (boss ? 1 : 0); i++) {
     let type;
     if (i === 0) type = rnd() < 0.5 ? 'sword' : 'shield';
     else if (i === 1 && newcomer) type = newcomer;           // show off a newly unlocked monster
@@ -219,6 +282,7 @@ function enemyComposition(stage) {
     const rank = Math.max(1, Math.min(ENEMY_MAX_RANK, Math.round(avgRank * (1 + spread))));
     list.push({ type, rank });
   }
+  if (boss) list.push({ type: boss.type, rank: Math.max(1, Math.min(ENEMY_MAX_RANK, Math.round(avgRank))), boss: true });
   return list;
 }
 
@@ -245,17 +309,24 @@ export function enemyWave(stage) {
   const target = BASE_POWER * targetPowerScale(stage);
   const mult = +Math.sqrt(target / wavePower(list, 1)).toFixed(3);
   const front = [], back = [];
-  for (const u of list) (MELEE_FRONT.has(u.type) ? front : back).push(u);
   const g = gridFor(stage);
   const free = new Set(Array.from({ length: g.cells }, (_, i) => i));
   const colOrder = centerCols(g.cols);
+  const out = [];
+  for (const u of list) {
+    if (u.boss) {
+      // the boss stands in the centre: melee bosses on the front line, the others in the middle row
+      const row = MELEE_FRONT.has(baseType(u.type)) || baseType(u.type) === 'skeleton' ? g.zoneRows - 1 : Math.floor((g.zoneRows - 1) / 2);
+      const cell = row * g.cols + colOrder[0];
+      free.delete(cell); out.push({ type: u.type, rank: u.rank, cell, boss: true });
+    } else (MELEE_FRONT.has(u.type) ? front : back).push(u);
+  }
   const order = (rows) => {
     const cells = [];
     for (const r of rows) for (const c of colOrder) cells.push(r * g.cols + c);
     return cells;
   };
   const rowsFront = Array.from({ length: g.zoneRows }, (_, i) => g.zoneRows - 1 - i); // enemy front line = last row
-  const out = [];
   const take = (list, rows) => {
     for (const u of list) {
       const cell = order(rows).find((c) => free.has(c));

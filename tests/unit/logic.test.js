@@ -508,3 +508,77 @@ test('wave strength counts the Ward Imp as support for the whole wave', () => {
   assert.ok(wavePower(withImp, 1) / wavePower(base, 1) > 1.35, 'counts more than its own small stats');
   assert.ok(wavePower(withImp, 1) < wavePower(withSword, 1) * 1.5);
 });
+
+// ---------- bosses ----------
+import { BOSSES, BOSS_COUNT, BASE, bossForStage, isBossStage } from '../../js/data.js';
+import { STRINGS } from '../../js/i18n.js';
+
+test('50 different bosses, each with stats and a unique name in every language', () => {
+  assert.equal(BOSS_COUNT, 50);
+  assert.equal(new Set(BOSSES.map((b) => b.type)).size, 50);
+  assert.equal(new Set(BOSSES.map((b) => b.body + '/' + b.element)).size, 50);
+  for (const b of BOSSES) {
+    const st = computeStats(b.type, 10);
+    assert.ok(st.boss && st.maxHp > computeStats(b.base, 10).maxHp * 4, `${b.type} is big`);
+  }
+  for (const lang of Object.keys(STRINGS)) {
+    const names = BOSSES.map((b) => STRINGS[lang]['mon.' + b.type]);
+    assert.ok(names.every((n) => n && !n.includes('{')), lang);
+    assert.equal(new Set(names).size, 50, `${lang} names are unique`);
+    assert.ok(BOSSES.every((b) => STRINGS[lang]['monDesc.' + b.type]), `${lang} descriptions`);
+  }
+});
+
+test('a boss joins the wave every 10 stages (one at a time, cycling through all 50), and pays double', () => {
+  for (let st = 1; st <= 520; st++) {
+    const bosses = enemyWave(st).units.filter((u) => /^boss/.test(u.type));
+    assert.equal(bosses.length, st % 10 === 0 ? 1 : 0, `stage ${st}`);
+    if (bosses.length) assert.equal(bosses[0].type, 'boss' + ((st / 10 - 1) % 50));
+  }
+  const seen = new Set(); for (let st = 10; st <= 500; st += 10) seen.add(bossForStage(st).type);
+  assert.equal(seen.size, 50, 'stages 10-500 meet every boss once');
+  // the boss takes one of the usual slots: the number of monsters stays the same (stage 10: 4, stage 100: 15)
+  assert.equal(enemyWave(10).units.length, 4);
+  assert.equal(enemyWave(100).units.length, 15);
+  // the boss stands in the centre column
+  const w = enemyWave(10), b = w.units.find((u) => u.boss);
+  assert.equal(b.cell % w.grid.cols, 2);
+  assert.ok(isBossStage(10) && !isBossStage(11));
+  assert.equal(rewardCoins(10, true), (40 + 150) * 2);
+  assert.equal(rewardCoins(11, true), 40 + 165);
+  assert.equal(rewardCoins(10, false), 5 + 20);
+});
+
+test('boss traits: resists magic, drains HP, regenerates, volleys several targets', () => {
+  const at = (type, team, cell) => makeUnit({ team, type, rank: 5, cell });
+  // magic resistance: a mage's spell takes half the usual share of a boss's max HP
+  const mage = at('mage', 'ally', 7);
+  const boss = at('boss0', 'enemy', 7), mob = at('sword', 'enemy', 6);
+  let bt = new Battle({ allies: [mage], enemies: [boss, mob] });
+  bt.applyMagic(mage, boss);
+  const pBoss = (boss.maxHp - boss.hp) / boss.maxHp, pMob = (mob.maxHp - mob.hp) / mob.maxHp;
+  assert.ok(Math.abs(pBoss - pMob * 0.5) < 0.01, `boss ${pBoss.toFixed(3)} vs mob ${pMob.toFixed(3)}`);
+  // dark element: heals by a share of the damage it deals
+  const dark = BOSSES.find((b) => b.element === 'dark' && b.body === 'goblin').type;
+  const d = at(dark, 'enemy', 7), victim = at('sword', 'ally', 7);
+  bt = new Battle({ allies: [victim], enemies: [d] });
+  d.hp = Math.round(d.maxHp / 2); const hp0 = d.hp;
+  const dmg = bt.applyDamage(d, victim);
+  assert.equal(d.hp - hp0, Math.round(dmg * BASE[dark].drain));
+  // holy element: regenerates over time
+  const holy = BOSSES.find((b) => b.element === 'holy' && b.body === 'orc').type;
+  const h = at(holy, 'enemy', 7), far = at('sword', 'ally', 0);
+  bt = new Battle({ allies: [far], enemies: [h] });
+  h.hp = Math.round(h.maxHp / 2); const h0 = h.hp;
+  h.cd = 99; far.cd = 99;
+  for (let i = 0; i < 60; i++) bt.step(1 / 60);
+  assert.ok(h.hp - h0 >= h.maxHp * 0.011, 'regenerated about 1.2% max HP in 1s');
+  // lizard ranger: each shot hits 3 targets
+  const liz = BOSSES.find((b) => b.body === 'lizard').type;
+  const l = at(liz, 'enemy', 7), a1 = at('sword', 'ally', 1), a2 = at('sword', 'ally', 2), a3 = at('sword', 'ally', 3), a4 = at('sword', 'ally', 12);
+  bt = new Battle({ allies: [a1, a2, a3, a4], enemies: [l] });
+  l.action = 'attack'; bt.resolveHit(l, a2);
+  assert.deepEqual([a1, a2, a3].map((u) => u.hp < u.maxHp), [true, true, true]);
+  assert.equal(a4.hp, a4.maxHp, 'only 3 targets');
+});
+

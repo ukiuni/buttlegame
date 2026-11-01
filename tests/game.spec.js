@@ -957,3 +957,67 @@ test('結界インプ：ステージ25から登場し、敵側の結界（ピン
   await expect.poll(() => page.evaluate(() => __game.battle.trace.some((x) => x.kind === 'nullify'
     && [...__game.battle.units, ...__game.battle.removed].find((u) => u.uid === x.warder).team === 'enemy')), { timeout: 30_000 }).toBe(true);
 });
+
+// =============== Bosses ===============
+test('ボス：10ステージごとに大きなボスが登場し、名前のバナー・BOSS 表示・説明が出る', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => __game.setStage(9));
+  await expect(page.getByTestId('home-boss')).toBeHidden();
+  await page.evaluate(() => __game.setStage(10));
+  await expect(page.getByTestId('home-boss')).toBeVisible();
+  await expect(page.getByTestId('home-boss')).toHaveText('BOSS');
+  await page.click('#btn-home-start');
+  await expect(page.getByTestId('battle-boss')).toBeVisible();
+  // exactly one boss in the enemy preview, drawn much bigger than the other monsters
+  const boss = page.locator('.unit.preview.boss');
+  await expect(boss).toHaveCount(1);
+  await expect(boss).toHaveAttribute('data-type', 'boss0');
+  const size = await page.evaluate(() => {
+    const w = (e) => e.querySelector('.sprite').getBoundingClientRect().width;
+    return { boss: w(document.querySelector('.unit.preview.boss')), mob: w(document.querySelector('.unit.preview:not(.boss)')) };
+  });
+  expect(size.boss).toBeGreaterThan(size.mob * 1.7);
+  // tapping it shows its name and abilities
+  const b = await boss.boundingBox();
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+  await expect(page.locator('#toast')).toContainText(JA['mon.boss0']);
+  await expect(page.locator('#toast')).toContainText(JA['monDesc.boss0']);
+  // the battle opens with the boss banner
+  await page.click('#btn-fight');
+  await expect(page.getByTestId('boss-banner')).toBeVisible();
+  await expect(page.getByTestId('boss-banner')).toContainText(JA['boss.appear']);
+  await expect(page.getByTestId('boss-banner')).toContainText(JA['mon.boss0']);
+  await expect(page.locator('#units .unit.boss')).toHaveCount(1);
+});
+
+test('ボス：50種類すべてのボスのドット絵が描け、どれも別の見た目になる', async ({ page }) => {
+  await page.goto('/index.html');
+  const r = await page.evaluate(async () => {
+    const { sheet } = await import('./js/sprites.js');
+    const urls = Array.from({ length: 50 }, (_, i) => sheet('mon_boss' + i));
+    return { ok: urls.every((u) => u.startsWith('data:image/png')), unique: new Set(urls).size };
+  });
+  expect(r.ok).toBe(true);
+  expect(r.unique).toBe(50);
+});
+
+test('ボス：倒すと次のステージへ進み、ボスステージの勝利はコインが2倍', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => { __game.setStage(10); });
+  await page.click('#btn-home-start');
+  // a strong army so the test is quick
+  await page.evaluate(() => {
+    const s = __game.store;
+    for (const c of s.data.roster) c.rank = 60;
+    s.save();
+  });
+  await page.click('#btn-battle-home'); await page.click('#btn-home-start');
+  const c0 = await page.evaluate(() => __game.store.data.coins);
+  await startBattle(page, { speed: 8 });
+  await waitResult(page);
+  await expect(page.locator('#overlay-result')).toHaveAttribute('data-result', 'win');
+  expect(await page.evaluate(() => __game.store.data.coins) - c0).toBe(rewardCoins(10, true));
+  expect(rewardCoins(10, true)).toBe((40 + 10 * 15) * 2);
+  await page.click('#btn-next');
+  await expect(page.getByTestId('battle-boss')).toBeHidden();   // stage 11 is a normal stage
+});
