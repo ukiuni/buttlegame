@@ -1,5 +1,5 @@
 // Battle simulation (pure logic, no DOM).
-import { computeStats, cellToField, mulberry32, SMALL_GRID } from './data.js';
+import { computeStats, cellToField, mulberry32, SMALL_GRID, canEquip } from './data.js';
 
 export const ATTACK_ANIM = 0.45;   // attack motion length (s)
 export const HIT_TIME = 0.22;      // when the hit lands within the attack motion
@@ -20,6 +20,8 @@ export function makeUnit({ team, type, rank, equip, cell, mult = 1, charId = nul
     prey: st.prey, charge: st.charge, chant: st.chant, buff: st.buff, ward: st.ward, guard: st.guard,
     buffUntil: 0, buffAmt: 0, chargeLeft: 0, chargeDx: 0, chargeDy: 0, chargeHit: null,
     assassin: st.assassin, fly: st.fly, poison: st.poison, slam: st.slam, stun: st.stun, pierce: st.pierce, summon: st.summon,
+    mag: st.mag, magBase: st.magBase, mres: st.mres,
+    weapon: equip && equip.weapon && canEquip(type, equip.weapon) ? equip.weapon : null,   // shown on the sprite
     boss: st.boss, magicRes: st.magicRes, multi: st.multi, drain: st.drain, regen: st.regen,
     mult, casts: 0, summoner: null,
     poisonDps: 0, poisonUntil: 0, poisonTick: 0, stunUntil: 0,
@@ -134,7 +136,12 @@ export class Battle {
     }
     return null;
   }
-  magicPct(u) { return u.magic.pct * (this.atkOf(u) / Math.max(1, u.atk0)); }
+  // Magic power including an enchanter's buff (mage classes only).
+  magOf(u) { return u.buffUntil > this.time ? u.mag * (1 + u.buffAmt) : u.mag; }
+  // Spell strength: mage classes scale with magic power (staves, buffs); monsters with their attack.
+  magicPct(u) {
+    return u.magBase ? u.magic.pct * (this.magOf(u) / u.magBase) : u.magic.pct * (this.atkOf(u) / Math.max(1, u.atk0));
+  }
   applyMagic(u, center) {
     const pct = this.magicPct(u);
     this.events.push({ type: 'magic', uid: u.uid, x: center.x, y: center.y, r: u.magic.radius });
@@ -148,7 +155,8 @@ export class Battle {
         continue;
       }
       // bosses resist magic (magicRes = share of the spell they shrug off)
-      const dmg = Math.max(1, Math.round(o.maxHp * pct * (1 - (o.magicRes || 0)) * (0.95 + this.rnd() * 0.1)));
+      // magic defence (accessories) and boss resistance cut the share
+      const dmg = Math.max(1, Math.round(o.maxHp * pct * (1 - (o.magicRes || 0)) * (1 - (o.mres || 0)) * (0.95 + this.rnd() * 0.1)));
       o.hp = Math.max(0, o.hp - dmg);
       this.events.push({ type: 'damage', uid: o.uid, amount: dmg, from: u.uid, kind: 'magic' });
       if (this.trace) this.trace.push({ t: this.time, kind: 'damage', magic: true, from: u.uid, to: o.uid, amount: dmg, hp: o.hp });
@@ -169,7 +177,8 @@ export class Battle {
   summonsOf(u) { return this.units.filter((o) => o.summoner === u.uid && this.alive(o)); }
 
   doSummon(u, toward) {
-    const m = makeUnit({ team: u.team, type: u.summon, rank: u.rank, cell: 0, mult: u.mult, grid: this.grid });
+    // a summoner's magic power makes its dragon stronger
+    const m = makeUnit({ team: u.team, type: u.summon, rank: u.rank, cell: 0, mult: u.mult * (u.magBase ? u.mag / u.magBase : 1), grid: this.grid });
     const d = Math.max(0.01, this.dist(u, toward));
     m.x = u.x + ((toward.x - u.x) / d) * 0.7; m.y = u.y + ((toward.y - u.y) / d) * 0.7;
     m.summoner = u.uid; m.facing = u.facing;

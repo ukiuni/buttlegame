@@ -143,20 +143,55 @@ const MELEE_FRONT = new Set(['sword', 'shield', 'golem', 'slime', 'bat']);
 export const RECRUIT_COST = { sword: 50, mage: 70, archer: 60, shield: 60, healer: 70, lancer: 70, thief: 60, enchanter: 80, summoner: 90, warder: 80 };
 
 export const SLOTS = ['weapon', 'armor', 'accessory'];
-export const ITEMS = {
-  bronze_sword:  { slot: 'weapon',    cost: 40,  atk: 5 },
-  mythril_sword: { slot: 'weapon',    cost: 120, atk: 14 },
-  leather_armor: { slot: 'armor',     cost: 40,  hp: 30, def: 2 },
-  mythril_armor: { slot: 'armor',     cost: 120, hp: 80, def: 6 },
-  speed_ring:    { slot: 'accessory', cost: 80,  haste: 0.2 },
-  life_amulet:   { slot: 'accessory', cost: 80,  hp: 50 },
+// Weapons come in 4 kinds and each class can only hold its own kind:
+//   blade = warrior weapons (swordsman, tank, thief) — raise ATK
+//   bow   = archer only, spear = lancer only — raise ATK
+//   staff = mage weapons (mage, healer, enchanter, summoner, warder) — raise MAGIC POWER (魔導力), not ATK
+// Armour raises DEF (and a little HP); accessories give speed, HP or magic defence (cuts magic damage taken).
+export const WEAPON_KIND = {
+  sword: 'blade', shield: 'blade', thief: 'blade', archer: 'bow', lancer: 'spear',
+  mage: 'staff', healer: 'staff', enchanter: 'staff', summoner: 'staff', warder: 'staff',
 };
+export const WEAPON_KINDS = ['blade', 'bow', 'spear', 'staff'];
+export const ITEMS = {
+  bronze_sword:   { slot: 'weapon', kind: 'blade', cost: 40,  atk: 5 },
+  iron_axe:       { slot: 'weapon', kind: 'blade', cost: 80,  atk: 9 },
+  mythril_sword:  { slot: 'weapon', kind: 'blade', cost: 120, atk: 14 },
+  flame_blade:    { slot: 'weapon', kind: 'blade', cost: 220, atk: 22 },
+  short_bow:      { slot: 'weapon', kind: 'bow',   cost: 40,  atk: 5 },
+  long_bow:       { slot: 'weapon', kind: 'bow',   cost: 90,  atk: 10 },
+  elven_bow:      { slot: 'weapon', kind: 'bow',   cost: 150, atk: 16 },
+  dragon_bow:     { slot: 'weapon', kind: 'bow',   cost: 240, atk: 24 },
+  bronze_spear:   { slot: 'weapon', kind: 'spear', cost: 45,  atk: 6 },
+  halberd:        { slot: 'weapon', kind: 'spear', cost: 95,  atk: 11 },
+  mythril_lance:  { slot: 'weapon', kind: 'spear', cost: 160, atk: 17 },
+  dragon_lance:   { slot: 'weapon', kind: 'spear', cost: 260, atk: 26 },
+  oak_staff:      { slot: 'weapon', kind: 'staff', cost: 40,  mag: 6 },
+  crystal_rod:    { slot: 'weapon', kind: 'staff', cost: 90,  mag: 11 },
+  sage_staff:     { slot: 'weapon', kind: 'staff', cost: 150, mag: 17 },
+  archmage_staff: { slot: 'weapon', kind: 'staff', cost: 240, mag: 26 },
+  leather_armor:  { slot: 'armor', cost: 40,  def: 3,  hp: 20 },
+  chain_mail:     { slot: 'armor', cost: 80,  def: 6,  hp: 30 },
+  mythril_armor:  { slot: 'armor', cost: 130, def: 10, hp: 50 },
+  dragon_mail:    { slot: 'armor', cost: 240, def: 16, hp: 80 },
+  speed_ring:     { slot: 'accessory', cost: 80,  haste: 0.2 },
+  life_amulet:    { slot: 'accessory', cost: 80,  hp: 50 },
+  ward_charm:     { slot: 'accessory', cost: 70,  mres: 0.15 },
+  saint_talisman: { slot: 'accessory', cost: 150, mres: 0.3 },
+};
+// Can a character of this class wear the item? (armour and accessories: everyone; weapons: own kind only)
+export function canEquip(type, key) {
+  const p = parseItem(key); if (!p) return false;
+  const it = ITEMS[p.id];
+  return it.slot !== 'weapon' || WEAPON_KIND[type] === it.kind;
+}
 
 // ---- equipment levels ----
 // An item is stored as a key: "bronze_sword" (Lv1) or "bronze_sword+3" (Lv3). Merging identical items adds
 // their levels (like characters). ATK / HP / DEF grow linearly with the level; haste grows with diminishing
 // returns towards HASTE_MAX.
 export const HASTE_MAX = 0.5;
+export const MRES_MAX = 0.7;   // magic defence: share of magic damage cut (levels approach this)
 export function parseItem(key) {
   const m = /^([a-z_]+)(?:\+(\d+))?$/.exec(key || '');
   return m && ITEMS[m[1]] ? { id: m[1], lv: m[2] ? +m[2] : 1 } : null;
@@ -167,16 +202,25 @@ export function itemStats(key) {
   const it = ITEMS[p.id], lv = p.lv;
   return {
     id: p.id, lv, slot: it.slot, cost: it.cost,
-    atk: (it.atk || 0) * lv, hp: (it.hp || 0) * lv, def: (it.def || 0) * lv,
+    kind: it.kind || null,
+    atk: (it.atk || 0) * lv, mag: (it.mag || 0) * lv, hp: (it.hp || 0) * lv, def: (it.def || 0) * lv,
     haste: it.haste ? +(it.haste + (HASTE_MAX - it.haste) * (1 - 1 / lv)).toFixed(3) : 0,
+    mres: it.mres ? +(it.mres + (MRES_MAX - it.mres) * (1 - 1 / lv)).toFixed(3) : 0,
   };
 }
 
 export function rankMult(rank) { return 1 + 0.3 * (rank - 1); }
 
+// Magic power (魔導力) of the mage classes: their spells, heals, buffs, barriers and summons scale with
+// mag / magBase (magBase = the class's own power at this rank; staves add to mag).
+export const MAG_BASE = 20;
 export function computeStats(type, rank = 1, equip = {}, mult = 1) {
   const b = BASE[type];
   const rm = rankMult(rank) * mult;
+  const magBase = WEAPON_KIND[type] === 'staff' ? Math.round(MAG_BASE * rm) : 0;
+  let mag = magBase;
+  for (const slot of SLOTS) { const it = equip && equip[slot] && canEquip(type, equip[slot]) ? itemStats(equip[slot]) : null; if (it && it.mag) mag += it.mag; }
+  const magR = magBase ? mag / magBase : 1;
   const s = {
     maxHp: Math.round(b.hp * rm),
     atk: Math.round(b.atk * rm),
@@ -186,22 +230,26 @@ export function computeStats(type, rank = 1, equip = {}, mult = 1) {
     speed: b.speed,
     interval: b.interval,
     magic: b.magic ? { pct: +Math.min(b.magic.max, b.magic.pct + b.magic.perRank * (rank - 1)).toFixed(4), radius: b.magic.radius } : null,
-    heal: b.heal ? Math.round(b.heal * rm) : 0,
+    heal: b.heal ? Math.round(b.heal * rm * magR) : 0,
+    mag, magBase, mres: 0,
     guard: b.guard ? { ...b.guard } : null,
-    ward: b.ward ? { radius: +Math.min(b.ward.max, b.ward.radius + b.ward.perRank * (rank - 1)).toFixed(3) } : null,
+    // magic power widens the barrier a little (up to 0.6 cells past the normal maximum)
+    ward: b.ward ? { radius: +Math.min(b.ward.max + 0.6, Math.min(b.ward.max, b.ward.radius + b.ward.perRank * (rank - 1)) + 0.3 * (magR - 1)).toFixed(3) } : null,
     assassin: !!b.assassin, fly: !!b.fly, poison: b.poison || 0, slam: b.slam || 0, stun: b.stun || 0,
     pierce: b.pierce || 0, summon: b.summon || null,
     boss: !!b.boss, magicRes: b.magicRes || 0, multi: b.multi || 0, drain: b.drain || 0, regen: b.regen || 0,
     prey: !!b.prey, charge: b.charge || null, chant: b.chant || 0,
-    buff: b.buff ? { ...b.buff, amount: +Math.min(BUFF_MAX, b.buff.base + b.buff.perRank * (rank - 1)).toFixed(3) } : null,
+    buff: b.buff ? { ...b.buff, amount: +Math.min(BUFF_MAX, (b.buff.base + b.buff.perRank * (rank - 1)) * magR).toFixed(3) } : null,
   };
   for (const slot of SLOTS) {
-    const it = equip && equip[slot] ? itemStats(equip[slot]) : null;
+    // items a class can't use (e.g. an old save) are ignored
+    const it = equip && equip[slot] && canEquip(type, equip[slot]) ? itemStats(equip[slot]) : null;
     if (!it) continue;
-    if (it.atk) { s.atk += it.atk; if (s.heal) s.heal += Math.round(it.atk * 0.8); }
+    if (it.atk) s.atk += it.atk;
     if (it.hp) s.maxHp += it.hp;
     if (it.def) s.def += it.def;
     if (it.haste) s.interval = +(s.interval * (1 - it.haste)).toFixed(3);
+    if (it.mres) s.mres = Math.max(s.mres, it.mres);
   }
   return s;
 }

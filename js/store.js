@@ -1,5 +1,5 @@
 // Persistent player state.
-import { ITEMS, RECRUIT_COST, itemStats, parseItem, itemKey, computeStats, SMALL_GRID, BIG_GRID, gridFor, centerCols, mergedRank, rewardCoins } from './data.js';
+import { ITEMS, RECRUIT_COST, canEquip, itemStats, parseItem, itemKey, computeStats, SMALL_GRID, BIG_GRID, gridFor, centerCols, mergedRank, rewardCoins } from './data.js';
 
 // Classes that fight up close go to the front rows when auto-arranging.
 export const MELEE = new Set(['sword', 'shield', 'lancer', 'thief']);
@@ -31,9 +31,17 @@ export class Store {
   load() {
     try {
       const raw = this.storage && this.storage.getItem(KEY);
-      if (raw) return { ...defaultSave(), ...JSON.parse(raw) };
+      if (raw) return Store.migrate({ ...defaultSave(), ...JSON.parse(raw) });
     } catch (e) { /* ignore */ }
     return defaultSave();
+  }
+  // Old saves: weapons a class can no longer hold (e.g. a sword on a mage) go back to the bag.
+  static migrate(d) {
+    for (const c of d.roster || []) {
+      const w = c.equip && c.equip.weapon;
+      if (w && !canEquip(c.type, w)) { d.inventory[w] = (d.inventory[w] || 0) + 1; delete c.equip.weapon; }
+    }
+    return d;
   }
   save() { try { this.storage && this.storage.setItem(KEY, JSON.stringify(this.data)); } catch (e) { /* ignore */ } }
   reset() { const { lang, bgm } = this.data; this.data = defaultSave(); this.data.lang = lang; this.data.bgm = bgm !== false; this.save(); }
@@ -105,7 +113,7 @@ export class Store {
 
   equip(charId, key) {
     const c = this.char(charId); const it = itemStats(key);
-    if (!c || !it || !(this.data.inventory[key] > 0)) return false;
+    if (!c || !it || !(this.data.inventory[key] > 0) || !canEquip(c.type, key)) return false;
     this.unequip(charId, it.slot, false);
     this.data.inventory[key]--;
     if (!this.data.inventory[key]) delete this.data.inventory[key];
@@ -270,8 +278,9 @@ export class Store {
       const rank = plannedRank.get(c.id) ?? c.rank;
       const s = computeStats(c.type, rank, equip);
       const ref = computeStats('sword', rank).atk;
-      const dps = ((s.heal || 0) + s.atk) / s.interval;
-      return dps * s.maxHp * (1 + s.def / ref);
+      // mage classes: everything they do scales with magic power; the others with attack
+      const dps = (s.magBase ? s.mag : s.atk) / s.interval;
+      return dps * s.maxHp * (1 + s.def / ref) * (1 + 0.5 * s.mres);
     };
     const plan = new Map(units.map((c) => [c.id, { ...c.equip }]));
     const SLOT_NAMES = [...new Set(Object.values(ITEMS).map((it) => it.slot))];
@@ -289,6 +298,7 @@ export class Store {
           const c = units.find((u) => u.id === id); const base = power(c, plan.get(id));
           for (let i = 0; i < pool.length; i++) {
             if (i && pool[i] === pool[i - 1]) continue;
+            if (!canEquip(c.type, pool[i])) continue;   // bows only for archers, staves only for mages, ...
             const gain = power(c, { ...plan.get(id), [slot]: pool[i] }) - base;
             if (gain > 0 && (!best || gain > best.gain)) best = { id, i, gain };
           }

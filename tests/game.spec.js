@@ -1040,3 +1040,137 @@ test('ホーム：ゲームスタートボタンの文字が上下中央にあ�
   expect(Math.abs(r.btnMid - r.textMid)).toBeLessThan(3);
   expect(r.btnH).toBeGreaterThan(r.textH + 16);   // padding is kept above and below the text
 });
+
+// =============== App update ===============
+// Service workers are blocked here so page.route() sees the version.json request on every browser
+// (WebKit does not route requests that pass through a service worker).
+test.describe('アプリ更新', () => {
+  test.use({ serviceWorkers: 'block' });
+test('更新：勝敗がつくと最新バージョンを確認し、新しい版があれば更新ダイアログ → 更新でアプリを読み込み直す', async ({ page }) => {
+  let checks = 0;
+  await page.route('**/version.json*', (route) => { checks++; route.fulfill({ contentType: 'application/json', body: '{ "version": "abc123new" }' }); });
+  await gotoPrep(page);
+  expect(checks).toBe(0);                                // no check before the battle ends
+  await startBattle(page, { speed: 8 });
+  await waitResult(page);
+  const dlg = page.getByTestId('update-dialog');
+  await expect(dlg).toBeVisible();
+  await expect(dlg).toContainText(JA['update.title']);
+  await expect(dlg).toContainText('dev → abc123new');
+  expect(checks).toBe(1);
+  const stage = await page.evaluate(() => __game.store.data.stage);
+  // "update now" reloads the app; progress is kept
+  await Promise.all([page.waitForEvent('load'), page.getByTestId('btn-update-now').click()]);
+  await expect(page.locator('#screen-title')).toBeVisible();
+  expect(await page.evaluate(() => __game.store.data.stage)).toBe(stage);
+});
+
+  test('更新：同じバージョンならダイアログは出ず、「あとで」を選ぶと同じ版では再表示しない', async ({ page }) => {
+  let version = 'dev';
+  await page.route('**/version.json*', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ version }) }));
+  await gotoPrep(page);
+  await startBattle(page, { speed: 8 });
+  await waitResult(page);
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId('update-dialog')).toBeHidden();   // up to date
+  // a newer version appears -> dialog after the next battle; "later" closes it
+  version = 'v2';
+  await page.click('#btn-next');
+  await startBattle(page, { speed: 8 });
+  await waitResult(page);
+  await expect(page.getByTestId('update-dialog')).toBeVisible();
+  await page.getByTestId('btn-update-later').click();
+  await expect(page.getByTestId('update-dialog')).toBeHidden();
+  await expect(page.locator('#overlay-result')).toBeVisible();     // back to the result screen
+  // the same version is not offered again in this session
+  await page.click('#btn-next');
+  await startBattle(page, { speed: 8 });
+  await waitResult(page);
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId('update-dialog')).toBeHidden();
+});
+
+  test('更新：自動進行中はダイアログを開いている間カウントダウンが止まり、「あとで」で再開する', async ({ page }) => {
+  let version = 'dev';
+  await page.route('**/version.json*', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ version }) }));
+  await gotoPrep(page);
+  await startBattle(page, { speed: 8 });
+  await waitResult(page);
+  version = 'v3';
+  await page.getByTestId('btn-auto-advance').click();          // stage 2 starts automatically
+  await waitResult(page);
+  await expect(page.getByTestId('update-dialog')).toBeVisible();
+  await page.waitForTimeout(3500);                              // longer than the 2s countdown
+  await expect(page.locator('#overlay-result')).toBeVisible();  // still waiting on the result screen
+  expect(await page.evaluate(() => __game.battle.over)).toBe(true);   // no new battle has started
+  await page.getByTestId('btn-update-later').click();
+  await expect(page.locator('#battle-stage')).toHaveText(JA['common.stage'].replace('{n}', '3'), { timeout: 10_000 });
+});
+});
+
+// =============== Weapon kinds / designs ===============
+test('装備：ショップは戦士の武器・弓・槍・魔道士の武器・防具・アクセサリに分かれ、武器はそれぞれの見た目で並ぶ', async ({ page }) => {
+  await gotoHome(page);
+  await page.click('#btn-home-shop');
+  await page.click('[data-tab="equipment"]');
+  const groups = await page.locator('.shop-group').evaluateAll((hs) => hs.map((h) => h.dataset.group));
+  expect(groups).toEqual(['blade', 'bow', 'spear', 'staff', 'armor', 'accessory']);
+  await expect(page.locator('.shop-group[data-group="staff"]')).toHaveText(JA['kind.staff']);
+  // every weapon row shows a character holding that weapon (all different designs)
+  const looks = await page.locator('.shop-item[data-item-id] .sprite[data-weapon]').evaluateAll((ss) => ss.map((s) => s.style.backgroundImage));
+  expect(looks.length).toBe(16);
+  expect(new Set(looks).size).toBe(16);
+  await expect(page.locator('.shop-item[data-item-id="long_bow"]')).toContainText(JA['equipFor.bow']);
+  await expect(page.locator('.shop-item[data-item-id="halberd"]')).toContainText(JA['equipFor.spear']);
+  await expect(page.locator('.shop-item[data-item-id="oak_staff"]')).toContainText(JA['stat.mag']);
+  await expect(page.locator('.shop-item[data-item-id="ward_charm"]')).toContainText(JA['stat.mres']);
+});
+
+test('装備：弓は弓使い、杖は魔道士系だけが選べ、杖は攻撃ではなく魔導力を上げる', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => { const s = __game.store; s.data.inventory = { long_bow: 1, oak_staff: 1, bronze_sword: 1, halberd: 1, ward_charm: 1 }; s.save(); __game.refresh(); });
+  const options = async (type) => {
+    await page.locator(`.roster-card[data-type="${type}"]`).first().click();
+    const o = await page.locator('select[data-slot="weapon"] option').evaluateAll((os) => os.map((x) => x.value).filter(Boolean));
+    return o;
+  };
+  expect(await options('archer')).toEqual(['long_bow']);
+  await page.click('#btn-modal-close');
+  expect(await options('sword')).toEqual(['bronze_sword']);
+  await page.click('#btn-modal-close');
+  // the mage: staff only; it raises magic power (魔導力), not attack
+  expect(await options('mage')).toEqual(['oak_staff']);
+  const atk = await page.locator('[data-stat="stat.atk"]').textContent();
+  const mag = Number(await page.locator('[data-stat="stat.mag"]').textContent());
+  await page.selectOption('select[data-slot="weapon"]', 'oak_staff');
+  await expect(page.locator('[data-stat="stat.mag"]')).toHaveText(String(mag + 6));
+  await expect(page.locator('[data-stat="stat.atk"]')).toHaveText(atk);
+  // accessory: magic defence
+  await page.selectOption('select[data-slot="accessory"]', 'ward_charm');
+  await expect(page.locator('[data-stat="stat.mres"]')).toHaveText('-15%');
+  await page.click('#btn-modal-close');
+  // warriors have no magic power row
+  await page.locator('.roster-card[data-type="sword"]').first().click();
+  await expect(page.locator('[data-stat="stat.mag"]')).toHaveCount(0);
+});
+
+test('装備：武器を持たせるとホーム画面・配置画面・戦闘中のキャラの見た目が変わる', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => { const s = __game.store; s.data.inventory = { flame_blade: 1 }; s.save(); __game.refresh(); });
+  const card = page.locator('.roster-card[data-type="sword"]').first();
+  const before = await card.locator('.sprite').evaluate((s) => s.style.backgroundImage);
+  const id = await card.getAttribute('data-char-id');
+  await card.click();
+  await page.selectOption('select[data-slot="weapon"]', 'flame_blade');
+  await expect(page.locator('.detail-head .sprite')).toHaveAttribute('data-weapon', 'flame_blade');
+  await page.click('#btn-modal-close');
+  const card2 = page.locator(`.roster-card[data-char-id="${id}"]`);
+  await expect(card2.locator('.sprite')).toHaveAttribute('data-weapon', 'flame_blade');
+  expect(await card2.locator('.sprite').evaluate((s) => s.style.backgroundImage)).not.toBe(before);
+  // on the field (prep) and in battle
+  await page.evaluate((cid) => { const s = __game.store; s.data.formation = { [cid]: 2 }; s.save(); }, +id);
+  await page.click('#btn-home-start');
+  await expect(page.locator('.unit.placed .sprite[data-weapon="flame_blade"]')).toHaveCount(1);
+  await page.click('#btn-fight');
+  await expect(page.locator('#units .unit.team-ally .sprite[data-weapon="flame_blade"]')).toHaveCount(1);
+});

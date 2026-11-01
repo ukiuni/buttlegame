@@ -78,10 +78,14 @@ jobs:
       - name: Build site (only the files the game needs)
         run: |
           mkdir _site
-          cp -r index.html manifest.json sw.js css js icons _site/
+          cp -r index.html manifest.json sw.js version.json css js icons _site/
           # new service worker version on every deploy, so players get the update
           sed -i "s/const VERSION = 'dev';/const VERSION = '${GITHUB_SHA::12}';/" _site/sw.js
           grep -q "${GITHUB_SHA::12}" _site/sw.js
+          # the running app knows its version; version.json tells it the latest one (checked after each battle)
+          sed -i "s/export const APP_VERSION = 'dev';/export const APP_VERSION = '${GITHUB_SHA::12}';/" _site/js/version.js
+          grep -q "${GITHUB_SHA::12}" _site/js/version.js
+          echo "{ \"version\": \"${GITHUB_SHA::12}\" }" > _site/version.json
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

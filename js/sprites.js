@@ -1,6 +1,6 @@
 // Procedural 16-bit-RPG style pixel sprites. Each sheet: 7 frames of 24x24.
 // Frames: 0 idle, 1 walk A, 2 walk B, 3 attack wind-up, 4 attack strike, 5 hurt, 6 down
-import { BOSSES } from './data.js';
+import { BOSSES, ITEMS } from './data.js';
 export const SIZE = 24;
 export const FRAMES = 7;
 const OUTLINE = '#1b1424';
@@ -109,6 +109,48 @@ const BOSS_BODY = {
 };
 for (const b of BOSSES) CHARS['mon_' + b.type] = BOSS_BODY[b.body](BOSS_PAL[b.element]);
 export const BOSS_GLOW = Object.fromEntries(Object.entries(BOSS_PAL).map(([k, c]) => [k, k === 'holy' ? c.a : c.m]));
+
+// ---------------- weapon designs (every weapon looks different and shows on the character) ----------------
+// shape: blade = sword | axe | great ; bow = short | long ; spear = spear | halberd | lance ; staff = orb | crystal | ring | star
+export const WEAPON_LOOK = {
+  bronze_sword:   { shape: 'sword', blade: '#d89a50', bladeL: '#f4c890', hilt: '#8a5a2c' },
+  iron_axe:       { shape: 'axe',   blade: '#a8b0bc', bladeL: '#e8ecf0', hilt: '#6a4424', shaft: '#8a5a2c' },
+  mythril_sword:  { shape: 'sword', blade: '#90d8f0', bladeL: '#ffffff', hilt: '#3060c0', long: true },
+  flame_blade:    { shape: 'great', blade: '#ff6030', bladeL: '#ffe080', hilt: '#801818', glow: '#ffb030' },
+  short_bow:      { shape: 'short', wood: '#a06a34', string: '#e8e8e8' },
+  long_bow:       { shape: 'long',  wood: '#5c3a1c', string: '#f0f0f0' },
+  elven_bow:      { shape: 'long',  wood: '#3ca050', string: '#fff8c0', tip: '#f0d040' },
+  dragon_bow:     { shape: 'long',  wood: '#b02828', string: '#ffd060', tip: '#ffe040', glow: '#ff8030' },
+  bronze_spear:   { shape: 'spear',   shaft: '#8a5a2c', head: '#d89a50', headL: '#f4c890', tassel: '#d03030' },
+  halberd:        { shape: 'halberd', shaft: '#6a4424', head: '#a8b0bc', headL: '#e8ecf0', tassel: '#3060e0' },
+  mythril_lance:  { shape: 'lance',   shaft: '#c8d0dc', head: '#90d8f0', headL: '#ffffff', tassel: '#3060c0' },
+  dragon_lance:   { shape: 'lance',   shaft: '#801818', head: '#ff6030', headL: '#ffe080', tassel: '#f0c040', glow: '#ffb030' },
+  oak_staff:      { shape: 'orb',     shaft: '#8a5a2c', orb: '#70e070' },
+  crystal_rod:    { shape: 'crystal', shaft: '#c8d0dc', orb: '#80e0ff' },
+  sage_staff:     { shape: 'ring',    shaft: '#f0c040', orb: '#ffffff' },
+  archmage_staff: { shape: 'star',    shaft: '#4a2a7a', orb: '#e070ff', glow: '#ffe0ff' },
+};
+const WEAPON_POSE = { blade: 'sword', bow: 'bow', spear: 'spear', staff: 'staff' };
+// The character config with an equipped weapon drawn in its hand. The tank keeps its shield and carries
+// a blade on its back hand.
+function withWeapon(k, weaponId) {
+  const it = ITEMS[weaponId], look = WEAPON_LOOK[weaponId];
+  if (!it || !look || k.custom) return k;
+  if (k.weapon === 'shield') return { ...k, backBlade: look };
+  return { ...k, weapon: WEAPON_POSE[it.kind], look };
+}
+function drawBackBlade(p, L, by) {
+  // blade held behind the body (from the back hand, pointing up and back)
+  const x = 8, y = 16 + by;
+  if (L.shape === 'axe') {
+    p.line(x, y, x - 4, y - 6, L.shaft || C.wood); p.rect(x - 6, y - 8, 3, 3, L.blade); p.set(x - 6, y - 8, L.bladeL);
+  } else {
+    const n = L.shape === 'great' ? 8 : L.long ? 7 : 6;
+    p.line(x - 1, y - 1, x - 1 - Math.round(n * 0.6), y - 1 - n, L.blade); p.line(x, y - 1, x - Math.round(n * 0.6), y - 1 - n, L.bladeL);
+    p.set(x, y, L.hilt); p.set(x + 1, y - 1, L.hilt);
+    if (L.glow) p.set(x - 1 - Math.round(n * 0.6), y - 2 - n, '*' + L.glow);
+  }
+}
 
 function drawHead(p, k, by) {
   const y0 = 5 + by;
@@ -266,6 +308,8 @@ function drawArm(p, k, pose, by) {
 function drawWeapon(p, k, pose, hx, hy) {
   switch (k.weapon) {
     case 'sword':
+      if (k.look) { drawBlade(p, k.look, pose, hx, hy); break; }
+      // falls through to the default sword
     case 'cleaver': {
       const blade = k.weapon === 'sword' ? C.steel : '#9a9a9a';
       const bladeS = k.weapon === 'sword' ? '#ffffff' : '#6a6a6a';
@@ -281,6 +325,7 @@ function drawWeapon(p, k, pose, hx, hy) {
       break;
     }
     case 'spear': {
+      if (k.look) { drawSpear(p, k.look, pose, hx, hy); break; }
       if (pose === 'atk1') { // pulled back, level, ready to charge
         p.rect(hx - 8, hy, 14, 1, C.wood); p.rect(hx + 6, hy - 1, 2, 3, C.steel); p.set(hx + 8, hy, '#ffffff');
       } else if (pose === 'atk2') { // thrust
@@ -292,6 +337,7 @@ function drawWeapon(p, k, pose, hx, hy) {
     }
     case 'staff':
     case 'rod': {
+      if (k.look) { drawStaff(p, k.look, pose, hx, hy); break; }
       const orb = '*' + k.orb;
       if (pose === 'atk2') { p.line(hx - 2, hy + 3, hx + 3, hy - 4, C.wood); p.rect(hx + 3, hy - 6, 2, 2, orb); p.set(hx + 5, hy - 7, '*#ffffff'); p.set(hx + 6, hy - 5, '*#ffffff'); }
       else if (pose === 'atk1') { p.line(hx, hy + 3, hx, hy - 7, C.wood); p.rect(hx - 1, hy - 9, 2, 2, orb); }
@@ -299,6 +345,7 @@ function drawWeapon(p, k, pose, hx, hy) {
       break;
     }
     case 'bow': {
+      if (k.look) { drawBow(p, k.look, pose, hx, hy); break; }
       // bow held forward
       const bx = pose === 'atk1' || pose === 'atk2' ? 16 : hx + 1, byy = pose === 'atk1' || pose === 'atk2' ? 14 : hy - 1;
       p.set(bx - 1, byy - 4, C.wood); p.set(bx, byy - 3, C.wood); p.rect(bx + 1, byy - 2, 1, 5, C.wood); p.set(bx, byy + 3, C.wood); p.set(bx - 1, byy + 4, C.wood);
@@ -319,6 +366,86 @@ function drawWeapon(p, k, pose, hx, hy) {
       break;
     }
   }
+}
+
+// ---- equipped weapon designs ----
+function drawBlade(p, L, pose, hx, hy) {
+  const glow = L.glow ? '*' + L.glow : null;
+  if (L.shape === 'axe') {
+    const sh = L.shaft || C.wood;
+    if (pose === 'atk1') { p.line(hx, hy, hx - 3, hy - 6, sh); p.rect(hx - 6, hy - 9, 3, 4, L.blade); p.rect(hx - 6, hy - 9, 1, 4, L.bladeL); }
+    else if (pose === 'atk2') { p.rect(hx + 1, hy, 6, 1, sh); p.rect(hx + 6, hy - 2, 3, 5, L.blade); p.rect(hx + 8, hy - 2, 1, 5, L.bladeL); }
+    else { p.line(hx, hy, hx + 4, hy - 5, sh); p.rect(hx + 4, hy - 8, 3, 4, L.blade); p.rect(hx + 6, hy - 8, 1, 4, L.bladeL); }
+    return;
+  }
+  const n = L.shape === 'great' ? 8 : L.long ? 7 : 5;   // blade length
+  if (pose === 'atk1') {
+    p.line(hx - 1, hy - 1, hx - 1 - Math.round(n * 0.6), hy - 1 - n, L.blade); p.line(hx, hy - 2, hx - Math.round(n * 0.6), hy - 2 - n, L.bladeL);
+    p.set(hx + 1, hy, L.hilt); p.set(hx - 1, hy + 1, L.hilt);
+    if (glow) p.set(hx - 1 - Math.round(n * 0.6), hy - 2 - n, glow);
+  } else if (pose === 'atk2') {
+    p.rect(hx + 1, hy, n + 1, 1, L.blade); p.rect(hx + 1, hy - 1, n, 1, L.bladeL);
+    if (L.shape === 'great') p.rect(hx + 2, hy + 1, n - 1, 1, L.blade);
+    p.set(hx + 1, hy - 1, L.hilt); p.set(hx + 1, hy + 1, L.hilt);
+    if (glow) { p.set(hx + n + 2, hy, glow); p.set(hx + n + 1, hy - 2, glow); }
+  } else {
+    p.line(hx + 1, hy - 1, hx + n, hy - n, L.blade); p.line(hx + 2, hy - 1, hx + n, hy - n + 1, L.bladeL);
+    if (L.shape === 'great') p.line(hx + 1, hy - 2, hx + n - 1, hy - n, L.blade);
+    p.set(hx, hy - 1, L.hilt); p.set(hx + 1, hy, L.hilt);
+    if (glow) { p.set(hx + n + 1, hy - n - 1, glow); p.set(hx + n - 1, hy - n - 2, glow); }
+  }
+}
+function drawBow(p, L, pose, hx, hy) {
+  const drawn = pose === 'atk1' || pose === 'atk2';
+  const bx = drawn ? 16 : hx + 1, by = drawn ? 14 : hy - 1, h = L.shape === 'long' ? 6 : 4;
+  // limbs
+  p.set(bx - 1, by - h, L.wood); p.line(bx, by - h + 1, bx + 1, by - 2, L.wood); p.rect(bx + 1, by - 2, 1, 5, L.wood);
+  p.line(bx + 1, by + 2, bx, by + h - 1, L.wood); p.set(bx - 1, by + h, L.wood);
+  if (L.tip) { p.set(bx - 1, by - h, L.tip); p.set(bx - 1, by + h, L.tip); }
+  if (L.glow) p.set(bx + 2, by, '*' + L.glow);
+  if (pose === 'atk1') {
+    p.line(bx - 1, by - h, 11, by, L.string); p.line(11, by, bx - 1, by + h, L.string);
+    p.rect(11, by, 8, 1, C.woodS); p.set(19, by, L.glow ? '*' + L.glow : C.steel);
+  } else p.line(bx - 1, by - h, bx - 1, by + h, L.string);
+}
+function drawSpear(p, L, pose, hx, hy) {
+  const glow = L.glow ? '*' + L.glow : null;
+  const tip = (x, y, dir) => {   // dir: 'up' or 'right'
+    if (L.shape === 'lance') {
+      if (dir === 'up') { p.rect(x - 1, y - 2, 3, 3, L.head); p.rect(x, y - 5, 1, 3, L.head); p.set(x, y - 6, L.headL); p.set(x - 1, y - 2, L.headL); }
+      else { p.rect(x, y - 1, 3, 3, L.head); p.rect(x + 3, y, 3, 1, L.head); p.set(x + 6, y, L.headL); p.set(x, y - 1, L.headL); }
+    } else if (L.shape === 'halberd') {
+      if (dir === 'up') { p.rect(x - 1, y - 3, 3, 3, L.head); p.set(x, y - 4, L.headL); p.rect(x + 2, y - 3, 2, 4, L.head); p.rect(x + 3, y - 3, 1, 4, L.headL); }
+      else { p.rect(x, y - 1, 3, 3, L.head); p.set(x + 3, y, L.headL); p.rect(x, y + 2, 4, 2, L.head); p.rect(x, y + 3, 4, 1, L.headL); }
+    } else {
+      if (dir === 'up') { p.rect(x - 1, y - 3, 3, 3, L.head); p.set(x, y - 4, L.headL); }
+      else { p.rect(x, y - 1, 3, 3, L.head); p.set(x + 3, y, L.headL); }
+    }
+    if (glow) { if (dir === 'up') p.set(x + 1, y - 6, glow); else p.set(x + 6, y - 1, glow); }
+  };
+  if (pose === 'atk1') { p.rect(hx - 8, hy, 14, 1, L.shaft); tip(hx + 6, hy, 'right'); p.set(hx + 4, hy + 1, L.tassel); }
+  else if (pose === 'atk2') { p.rect(hx - 4, hy, 12, 1, L.shaft); tip(hx + 8, hy, 'right'); p.set(hx + 6, hy + 1, L.tassel); }
+  else { p.line(hx, hy + 5, hx, hy - 10, L.shaft); tip(hx, hy - 10, 'up'); p.set(hx + 1, hy - 9, L.tassel); p.set(hx + 1, hy - 8, L.tassel); }
+}
+function drawStaff(p, L, pose, hx, hy) {
+  const orb = '*' + L.orb;
+  // shaft and the top position for each pose
+  let tx, ty;
+  if (pose === 'atk2') { p.line(hx - 2, hy + 3, hx + 3, hy - 4, L.shaft); tx = hx + 4; ty = hy - 6; }
+  else if (pose === 'atk1') { p.line(hx, hy + 3, hx, hy - 7, L.shaft); tx = hx; ty = hy - 9; }
+  else { p.line(hx, hy + 4, hx, hy - 6, L.shaft); tx = hx; ty = hy - 8; }
+  switch (L.shape) {
+    case 'crystal':   // tall diamond
+      p.set(tx, ty - 2, orb); p.rect(tx - 1, ty - 1, 3, 2, orb); p.set(tx, ty + 1, orb); p.set(tx, ty - 1, '*#ffffff'); break;
+    case 'ring':      // golden ring around a white orb
+      p.rect(tx - 1, ty - 1, 3, 1, L.shaft); p.rect(tx - 1, ty + 1, 3, 1, L.shaft); p.set(tx - 2, ty, L.shaft); p.set(tx + 2, ty, L.shaft); p.set(tx, ty, orb); p.set(tx - 1, ty, orb); p.set(tx + 1, ty, orb); break;
+    case 'star':      // glowing star
+      p.rect(tx - 1, ty - 1, 3, 3, orb); p.set(tx, ty - 2, orb); p.set(tx, ty + 2, orb); p.set(tx - 2, ty, orb); p.set(tx + 2, ty, orb);
+      p.set(tx, ty, '*' + (L.glow || '#ffffff')); p.set(tx + 2, ty - 2, '*' + (L.glow || '#ffffff')); p.set(tx - 2, ty - 2, '*' + (L.glow || '#ffffff')); break;
+    default:          // simple orb
+      p.rect(tx - 1, ty - 1, 2, 2, orb); p.set(tx - 1, ty - 1, '*#ffffff');
+  }
+  if (pose === 'atk2') { p.set(tx + 2, ty - 2, '*#ffffff'); p.set(tx + 3, ty, '*#ffffff'); }
 }
 
 // ---------------- non-humanoid monsters ----------------
@@ -410,6 +537,7 @@ function drawPose(k, pose) {
   const by = pose === 'walk2' ? -1 : 0;
   drawLegs(p, k, pose);
   drawBody(p, k, by);
+  if (k.backBlade) drawBackBlade(p, k.backBlade, by);
   drawHead(p, k, by);
   const [hx, hy] = (k.weapon === 'shield') ? handPos(pose, by) : drawArm(p, k, pose, by);
   if (k.weapon === 'shield') { p.rect(12, 13 + by, 2, 2, k.bare ? k.skin : k.tunic); }
@@ -428,7 +556,8 @@ function canvas(w, h) {
 // Returns data URL for sprite sheet (FRAMES * 24 x 24)
 export function sheet(key) {
   if (cache[key]) return cache[key];
-  const k = CHARS[key];
+  const [base, weaponId] = key.split('@');
+  const k = weaponId ? withWeapon(CHARS[base], weaponId) : CHARS[base];
   const cv = canvas(SIZE * FRAMES, SIZE);
   const ctx = cv.getContext('2d');
   ['idle', 'walk1', 'walk2', 'atk1', 'atk2'].forEach((pose, i) => drawPose(k, pose).draw(ctx, i * SIZE, 0));
@@ -444,7 +573,11 @@ export function sheet(key) {
   return cache[key];
 }
 
-export function spriteKey(team, type) { return (team === 'ally' ? 'hero_' : 'mon_') + type; }
+// weapon: an item key ("mythril_sword+3") — the level doesn't change the look
+export function spriteKey(team, type, weapon = null) {
+  const id = weapon ? String(weapon).replace(/\+\d+$/, '') : '';
+  return (team === 'ally' ? 'hero_' : 'mon_') + type + (id && WEAPON_LOOK[id] ? '@' + id : '');
+}
 
 // Small pixel icons (12x12)
 const ICONS = {

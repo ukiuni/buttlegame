@@ -294,3 +294,6 @@ body.big-board #prep-panel .hint { display: none; }
 .boss-banner-sub { color: #ff5070; font-weight: bold; font-size: 14px; letter-spacing: 3px; }
 .boss-banner-name { color: #fff; font-size: 22px; font-weight: bold; text-shadow: 0 0 8px var(--boss-glow), 2px 2px 0 #000; }
 @keyframes bossbanner { 0% { opacity: 0; transform: scaleY(.2); } 12% { opacity: 1; transform: scaleY(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
+.update-buttons { display: flex; gap: 10px; }
+.update-buttons .btn { flex: 1; }
+.shop-group { margin: 10px 0 2px; color: #ffe070; font-size: .9rem; border-bottom: 1px solid #3c4cc8; padding-bottom: 2px; }

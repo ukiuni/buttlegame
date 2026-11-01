@@ -343,7 +343,8 @@ test('magic share grows with rank (capped) and with weapons / buffs', () => {
   const pct = (rank, equip = {}) => { const u = makeUnit({ team: 'ally', type: 'mage', rank, equip, cell: 12 }); return new Battle({ allies: [u], enemies: [] }).magicPct(u); };
   assert.ok(pct(50) > pct(1) && pct(100) > pct(50));
   assert.equal(pct(100000), 0.25, 'capped at 25%');
-  assert.ok(pct(1, { weapon: 'mythril_sword' }) > pct(1) * 1.4, 'weapon raises the share');
+  assert.ok(pct(1, { weapon: 'sage_staff' }) > pct(1) * 1.4, 'a staff (magic power) raises the share');
+  assert.equal(pct(1, { weapon: 'mythril_sword' }), pct(1), 'a sword does nothing for a mage (it cannot hold one)');
 });
 
 test('enemies use magic too: waves have mages from stage 2, and they hit allies by % of max HP', () => {
@@ -434,7 +435,7 @@ test('shielder guards nearby allies: +40% of its defence, strongest only, own te
 test('items: levels scale stats; buying many; merging adds levels (mixed levels too)', async () => {
   const { itemStats, computeStats } = await import('../../js/data.js');
   assert.equal(itemStats('bronze_sword').atk, 5); assert.equal(itemStats('bronze_sword+3').atk, 15);
-  assert.equal(itemStats('mythril_armor+2').hp, 160); assert.equal(itemStats('mythril_armor+2').def, 12);
+  assert.equal(itemStats('mythril_armor+2').hp, 100); assert.equal(itemStats('mythril_armor+2').def, 20);
   assert.ok(itemStats('speed_ring+4').haste > itemStats('speed_ring').haste && itemStats('speed_ring+999').haste <= 0.5);
   assert.equal(computeStats('sword', 1, { weapon: 'bronze_sword+3' }).atk, computeStats('sword', 1).atk + 15);
   const s = new Store(mem());
@@ -582,3 +583,67 @@ test('boss traits: resists magic, drains HP, regenerates, volleys several target
   assert.equal(a4.hp, a4.maxHp, 'only 3 targets');
 });
 
+
+// ---------- weapon kinds, magic power, magic defence ----------
+import { canEquip, ITEMS, WEAPON_KIND, MRES_MAX } from '../../js/data.js';
+
+test('weapons: warrior blades, bows (archer only), spears (lancer only), staves (mage classes); armour and accessories for all', () => {
+  const kinds = (k) => Object.keys(ITEMS).filter((id) => ITEMS[id].kind === k);
+  for (const k of ['blade', 'bow', 'spear', 'staff']) assert.ok(kinds(k).length >= 4, `${k}: 4+ weapons`);
+  assert.ok(Object.keys(ITEMS).filter((id) => ITEMS[id].slot === 'armor').length >= 4);
+  for (const type of Object.keys(WEAPON_KIND)) {
+    for (const id of Object.keys(ITEMS)) {
+      const it = ITEMS[id];
+      assert.equal(canEquip(type, id), it.slot !== 'weapon' || WEAPON_KIND[type] === it.kind, `${type} / ${id}`);
+    }
+  }
+  assert.ok(canEquip('archer', 'long_bow') && !canEquip('sword', 'long_bow') && !canEquip('lancer', 'long_bow'));
+  assert.ok(canEquip('lancer', 'halberd') && !canEquip('archer', 'halberd') && !canEquip('sword', 'halberd'));
+  assert.ok(canEquip('healer', 'oak_staff+3') && !canEquip('healer', 'bronze_sword'));
+  // the store refuses a weapon of the wrong kind
+  const s = new Store(mem());
+  const archer = s.data.roster.find((c) => c.type === 'archer'), sw = s.data.roster.find((c) => c.type === 'sword');
+  s.data.inventory = { long_bow: 1 };
+  assert.equal(s.equip(sw.id, 'long_bow'), false);
+  assert.equal(s.equip(archer.id, 'long_bow'), true);
+});
+
+test('mage classes use magic power: staves raise it (not ATK) and it scales heals, buffs, barriers and summons', () => {
+  const st = (type, equip = {}) => computeStats(type, 5, equip);
+  assert.equal(st('mage', { weapon: 'sage_staff' }).atk, st('mage').atk, 'staff adds no attack');
+  assert.equal(st('mage', { weapon: 'sage_staff' }).mag, st('mage').mag + 17);
+  assert.equal(st('sword').mag, 0, 'warriors have no magic power');
+  assert.ok(st('healer', { weapon: 'archmage_staff' }).heal > st('healer').heal * 1.2, 'heals');
+  assert.ok(st('enchanter', { weapon: 'archmage_staff' }).buff.amount > st('enchanter').buff.amount, 'buffs');
+  assert.ok(st('warder', { weapon: 'archmage_staff' }).ward.radius > st('warder').ward.radius, 'barrier');
+  // summoner: the dragon gets stronger with magic power
+  const summon = (equip) => {
+    const u = makeUnit({ team: 'ally', type: 'summoner', rank: 5, equip, cell: 12 });
+    const bt = new Battle({ allies: [u], enemies: [makeUnit({ team: 'enemy', type: 'sword', rank: 1, cell: 2 })] });
+    return bt.doSummon(u, { x: u.x, y: u.y - 1 });
+  };
+  assert.ok(summon({ weapon: 'archmage_staff' }).atk > summon({}).atk);
+  // a blade on a mage (old save) is ignored
+  assert.equal(st('mage', { weapon: 'flame_blade' }).atk, st('mage').atk);
+});
+
+test('magic defence accessories cut magic damage taken; old saves drop weapons a class cannot hold', () => {
+  const hit = (equip) => {
+    const em = makeUnit({ team: 'enemy', type: 'mage', rank: 5, cell: 2 });
+    const a = makeUnit({ team: 'ally', type: 'sword', rank: 5, equip, cell: 2 });
+    const bt = new Battle({ allies: [a], enemies: [em], seed: 3 });
+    bt.applyMagic(em, a);
+    return a.maxHp - a.hp;
+  };
+  const plain = hit({}), charm = hit({ accessory: 'ward_charm' }), talisman = hit({ accessory: 'saint_talisman' });
+  assert.ok(Math.abs(charm / plain - 0.85) < 0.03, `charm ${charm}/${plain}`);
+  assert.ok(talisman < charm);
+  const lv50 = computeStats('sword', 1, { accessory: 'ward_charm+50' }).mres;
+  assert.ok(lv50 > 0.6 && lv50 <= MRES_MAX, 'levels approach the cap');
+  // migration
+  const raw = { roster: [{ id: 1, type: 'mage', rank: 1, equip: { weapon: 'mythril_sword', armor: 'leather_armor' } }], inventory: {} };
+  const s = new Store({ getItem: () => JSON.stringify(raw), setItem: () => {} });
+  assert.equal(s.data.roster[0].equip.weapon, undefined);
+  assert.equal(s.data.roster[0].equip.armor, 'leather_armor');
+  assert.equal(s.data.inventory.mythril_sword, 1);
+});

@@ -6,7 +6,7 @@ const VERSION = 'dev';
 const CACHE = 'pixel-brigade-' + VERSION;
 const ASSETS = [
   './', './index.html', './manifest.json', './css/style.css',
-  './js/main.js', './js/data.js', './js/battle.js', './js/store.js', './js/i18n.js', './js/sprites.js', './js/audio.js',
+  './js/main.js', './js/version.js', './js/data.js', './js/battle.js', './js/store.js', './js/i18n.js', './js/sprites.js', './js/audio.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-192.png', './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png', './icons/favicon-32.png',
 ];
@@ -25,11 +25,14 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (url.pathname.endsWith('/version.json')) return;   // always straight from the network (update check)
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     try {
-      const res = await fetch(req);
+      // revalidate with the server (cheap 304s) so a new release is picked up right away, not after the HTTP cache expires
+      const res = await fetch(req, { cache: 'no-cache' });
       if (res.ok) cache.put(req, res.clone());
       return res;
     } catch (err) {

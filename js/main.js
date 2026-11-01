@@ -1,10 +1,11 @@
-import { TYPES, SHOP_ORDER, MONSTER_TYPES, isBoss, bossInfo, baseType, bossForStage, ITEMS, SLOTS, RECRUIT_COST, fmtRank, gridFor, SMALL_GRID, itemStats, parseItem,
+import { TYPES, SHOP_ORDER, MONSTER_TYPES, canEquip, isBoss, bossInfo, baseType, bossForStage, ITEMS, SLOTS, RECRUIT_COST, fmtRank, gridFor, SMALL_GRID, itemStats, parseItem,
   computeStats, enemyWave, cellToField, rewardCoins } from './data.js';
 import { Battle, makeUnit, HIT_TIME } from './battle.js';
 import { Store } from './store.js';
 import { t, setLang, getLang, detectLang, LANGS } from './i18n.js';
 import { sheet, spriteKey, icon, FRAMES, BOSS_GLOW } from './sprites.js';
 import { Bgm } from './audio.js';
+import { APP_VERSION } from './version.js';
 
 const OY = 0.4; // top padding (cells) so front sprites are not clipped
 const $ = (s, r = document) => r.querySelector(s);
@@ -37,9 +38,11 @@ function charName(type, team = 'ally') { return t((team === 'ally' ? 'char.' : '
 function setFrame(spriteEl, frame) {
   spriteEl.style.backgroundPosition = `${(frame * 100) / (FRAMES - 1)}% 0`;
 }
-function spriteEl(team, type, frame = 0) {
+// weapon: equipped weapon key — the character is drawn holding it
+function spriteEl(team, type, frame = 0, weapon = null) {
   const s = el('div', 'sprite');
-  s.style.backgroundImage = `url(${sheet(spriteKey(team, type))})`;
+  s.style.backgroundImage = `url(${sheet(spriteKey(team, type, weapon))})`;
+  if (weapon) s.dataset.weapon = String(weapon).replace(/\+\d+$/, '');
   setFrame(s, frame);
   return s;
 }
@@ -98,7 +101,7 @@ function openBulkMerge(targetId) {
     n = Math.max(Math.min(n, all.max), all.max ? 1 : 0);
     const pv = store.previewBulk(targetId, n);
     const h = el('h3'); h.textContent = t('bulk.title'); box.appendChild(h);
-    const head = el('div', 'bulk-head'); head.appendChild(spriteEl('ally', tg.type));
+    const head = el('div', 'bulk-head'); head.appendChild(spriteEl('ally', tg.type, 0, tg.equip.weapon));
     const prv = el('div', 'bulk-preview', { 'data-testid': 'bulk-preview' }); prv.textContent = t('bulk.preview', { name: charName(tg.type), from: pv.from, to: pv.to });
     head.appendChild(prv); box.appendChild(head);
     if (!all.max) {
@@ -242,7 +245,7 @@ function renderHome() {
   const sorted = [...store.data.roster].sort((a, b) => TYPES.indexOf(a.type) - TYPES.indexOf(b.type) || b.rank - a.rank);
   for (const c of sorted) {
     const card = el('div', 'roster-card', { 'data-char-id': c.id, 'data-type': c.type, 'data-rank': c.rank, 'data-testid': 'roster-card' });
-    card.appendChild(spriteEl('ally', c.type));
+    card.appendChild(spriteEl('ally', c.type, 0, c.equip.weapon));
     const nm = el('div', 'name'); nm.textContent = charName(c.type); card.appendChild(nm);
     const rk = el('span', 'rank-badge'); rk.textContent = `★${fmtRank(c.rank)}`; card.appendChild(rk);
     if (c.locked) { const lk = el('span', 'lock-mark'); lk.textContent = '🔒'; card.appendChild(lk); }
@@ -280,32 +283,44 @@ function renderHome() {
 
 // "Bronze Sword", "Bronze Sword +3"
 function itemName(key) { const p = parseItem(key); return p ? t('item.' + p.id) + (p.lv > 1 ? ` +${p.lv}` : '') : ''; }
-function itemDesc(key) {
+function itemDesc(key, withWho = false) {
   const it = itemStats(key); const parts = [];
   if (it.atk) parts.push(`${t('stat.atk')}+${it.atk}`);
-  if (it.hp) parts.push(`${t('stat.hp')}+${it.hp}`);
+  if (it.mag) parts.push(`${t('stat.mag')}+${it.mag}`);
   if (it.def) parts.push(`${t('stat.def')}+${it.def}`);
+  if (it.hp) parts.push(`${t('stat.hp')}+${it.hp}`);
   if (it.haste) parts.push(`${t('stat.interval')}-${Math.round(it.haste * 100)}%`);
-  return `${t('slot.' + it.slot)}: ${parts.join(' ')}`;
+  if (it.mres) parts.push(`${t('stat.mres')}-${Math.round(it.mres * 100)}%`);
+  const head = it.kind ? t('kind.' + it.kind) : t('slot.' + it.slot);
+  return `${head}: ${parts.join(' ')}` + (withWho && it.kind ? ` (${t('equipFor.' + it.kind)})` : '');
 }
+// a sample class that can hold each weapon kind (used to show the weapon's look in the shop)
+const KIND_MODEL = { blade: 'sword', bow: 'archer', spear: 'lancer', staff: 'mage' };
 
 function openModal(render) {
   hideUndo(); // a new dialog starts a new context
   G.modalRender = render; render();
   $('#modal').classList.remove('hidden');
 }
-function closeModal() { $('#modal').classList.add('hidden'); G.modalRender = null; if (G.screen === 'home') renderHome(); }
+function closeModal() {
+  $('#modal').classList.add('hidden'); G.modalRender = null; G.updateDialog = false;
+  $('#btn-modal-close').classList.remove('hidden');
+  if (G.screen === 'home') renderHome();
+}
 
 function openCharDetail(id) {
   openModal(() => {
     const c = store.char(id); const box = $('#modal-content'); box.innerHTML = '';
     if (!c) { closeModal(); return; }
     box.dataset.testid = 'char-detail';
-    const head = el('div', 'detail-head'); head.appendChild(spriteEl('ally', c.type));
+    const head = el('div', 'detail-head'); head.appendChild(spriteEl('ally', c.type, 0, c.equip.weapon));
     const h = el('h3'); h.textContent = `${charName(c.type)}  ★${c.rank}`; head.appendChild(h); box.appendChild(head);
     const s = computeStats(c.type, c.rank, c.equip);
     const tbl = el('table', 'stat-table');
-    const rows = [['stat.hp', s.maxHp], ['stat.atk', s.atk], ['stat.def', s.def], ['stat.range', s.range], ['stat.interval', s.interval + 's']];
+    const rows = [['stat.hp', s.maxHp], ['stat.atk', s.atk]];
+    if (s.magBase) rows.push(['stat.mag', s.mag]);   // magic power drives spells / heals / buffs / barriers / summons
+    rows.push(['stat.def', s.def], ['stat.range', s.range], ['stat.interval', s.interval + 's']);
+    if (s.mres) rows.push(['stat.mres', `-${Math.round(s.mres * 100)}%`]);
     if (s.heal) rows.push(['stat.heal', s.heal]);
     // magic: share of the target's max HP per hit (weapons raise it in proportion to the attack they add)
     // defence: how much of a same-rank swordsman's hit still gets through (dmg = atk^2 / (atk + def))
@@ -313,7 +328,7 @@ function openCharDetail(id) {
     rows.push(['stat.defCut', Math.round((100 * swAtk) / (swAtk + s.def)) + '%']);
     if (s.guard) rows.push(['stat.guard', `+${Math.round(s.def * s.guard.share)}`]);
     if (s.ward) rows.push(['stat.ward', s.ward.radius.toFixed(2)]);
-    if (s.magic) rows.push(['stat.magic', (s.magic.pct * s.atk / computeStats(c.type, c.rank).atk * 100).toFixed(1) + '%']);
+    if (s.magic) rows.push(['stat.magic', (s.magic.pct * (s.magBase ? s.mag / s.magBase : 1) * 100).toFixed(1) + '%']);
     for (const [k, v] of rows) { const tr = el('tr'); tr.innerHTML = `<td>${t(k)}</td><td data-stat="${k}">${v}</td>`; tbl.appendChild(tr); }
     box.appendChild(tbl);
     const acts = el('div', 'seg');
@@ -332,7 +347,8 @@ function openCharDetail(id) {
       const lb = el('span'); lb.textContent = t('slot.' + slot); row.appendChild(lb);
       const sel = el('select', '', { 'data-slot': slot });
       const none = el('option'); none.value = ''; none.textContent = t('equip.none'); sel.appendChild(none);
-      const ids = new Set(Object.keys(store.data.inventory).filter((i) => itemStats(i)?.slot === slot && store.data.inventory[i] > 0));
+      // only items this class can hold (bows for archers, staves for mages, ...)
+      const ids = new Set(Object.keys(store.data.inventory).filter((i) => itemStats(i)?.slot === slot && store.data.inventory[i] > 0 && canEquip(c.type, i)));
       if (c.equip[slot]) ids.add(c.equip[slot]);
       const sorted = [...ids].sort((a, b) => parseItem(a).id.localeCompare(parseItem(b).id) || parseItem(b).lv - parseItem(a).lv);
       for (const i of sorted) { const o = el('option'); o.value = i; o.textContent = `${itemName(i)} (${itemDesc(i)})`; sel.appendChild(o); }
@@ -387,10 +403,15 @@ function openShop(tab = 'recruit') {
         row.appendChild(grp); list.appendChild(row);
       }
     } else {
+      let group = null;
       for (const [id, it] of Object.entries(ITEMS)) {
-        const row = el('div', 'shop-item');
-        const im = el('img'); im.src = icon(it.slot); row.appendChild(im);
-        const nm = el('div', 'name'); nm.innerHTML = `${t('item.' + id)}<div class="desc">${itemDesc(id)}</div>`; row.appendChild(nm);
+        // headings: warrior weapons / bows / spears / mage weapons / armour / accessories
+        const g = it.kind || it.slot;
+        if (g !== group) { group = g; const gh = el('h4', 'shop-group', { 'data-group': g }); gh.textContent = t(it.kind ? 'kind.' + it.kind : 'slot.' + it.slot); list.appendChild(gh); }
+        const row = el('div', 'shop-item', { 'data-item-id': id });
+        if (it.kind) row.appendChild(spriteEl('ally', KIND_MODEL[it.kind], 0, id));   // the weapon's own design
+        else { const im = el('img'); im.src = icon(it.slot); row.appendChild(im); }
+        const nm = el('div', 'name'); nm.innerHTML = `${t('item.' + id)}<div class="desc">${itemDesc(id, true)}</div>`; row.appendChild(nm);
         const grp = el('div', 'buy-group');
         const b = el('button', 'btn small primary', { 'data-buy-item': id }); b.textContent = t('shop.buy', { n: it.cost });
         b.disabled = store.data.coins < it.cost;
@@ -450,12 +471,12 @@ function renderBossHp(hp, maxHp) {
   box.querySelector('.fill').style.width = (maxHp ? Math.max(0, hp / maxHp) * 100 : 100) + '%';
 }
 
-function makeUnitEl(team, type, rank) {
+function makeUnitEl(team, type, rank, weapon = null) {
   const size = unitSize();
   const u = el('div', `unit team-${team}`);
   u.style.width = size + 'px'; u.style.height = size + 'px';
   u.appendChild(el('div', 'shadow'));
-  const s = spriteEl(team, type); u.appendChild(s);
+  const s = spriteEl(team, type, 0, weapon); u.appendChild(s);
   const hp = el('div', 'hpbar'); const fill = el('div', 'fill'); fill.style.width = '100%'; hp.appendChild(fill); u.appendChild(hp);
   u.appendChild(el('div', 'guard-mark'));   // shown while a shielder guards this unit
   const rk = el('div', 'rank'); rk.textContent = `★${fmtRank(rank)}`; if (rk.textContent.length >= 5) rk.classList.add('long'); u.appendChild(rk);
@@ -511,7 +532,7 @@ function renderPrep() {
   // placed allies
   for (const [cid, cell] of Object.entries(store.formation)) {
     const c = store.char(+cid); if (!c) { delete store.formation[cid]; continue; }
-    const u = makeUnitEl('ally', c.type, c.rank);
+    const u = makeUnitEl('ally', c.type, c.rank, c.equip.weapon);
     u.classList.add('placed'); u.dataset.charId = c.id; u.dataset.cell = cell; u.dataset.testid = 'placed-unit';
     if (G.selected === c.id) u.classList.add('selected');
     const p = cellToField('ally', cell, G.grid); positionEl(u, p.x, p.y);
@@ -538,7 +559,7 @@ function renderPrep() {
     const c = list[0];
     const card = el('div', 'bench-card' + (list.length > 1 ? ' stack' : '') + (list.some((x) => x.id === G.selected) ? ' selected' : ''),
       { 'data-char-id': c.id, 'data-type': type, 'data-rank': c.rank, 'data-count': list.length, 'data-testid': 'bench-card' });
-    card.appendChild(spriteEl('ally', type));
+    card.appendChild(spriteEl('ally', type, 0, c.equip.weapon));
     const rk = el('span', 'rank-badge'); rk.textContent = `★${fmtRank(c.rank)}`; card.appendChild(rk);
     if (list.length > 1) { const n = el('span', 'count-badge'); n.textContent = `×${list.length}`; card.appendChild(n); }
     if (c.locked) { const lk = el('span', 'lock-mark'); lk.textContent = '🔒'; card.appendChild(lk); }
@@ -622,7 +643,7 @@ function initPrepInput() {
     if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 10) {
       drag.moved = true;
       const c = store.char(drag.charId);
-      drag.ghost = makeUnitEl('ally', c.type, c.rank); drag.ghost.classList.add('ghost');
+      drag.ghost = makeUnitEl('ally', c.type, c.rank, c.equip.weapon); drag.ghost.classList.add('ghost');
       drag.ghost.style.position = 'fixed';
       document.body.appendChild(drag.ghost);
     }
@@ -891,7 +912,7 @@ function renderBattle() {
   for (const u of b.units) {
     let ue = G.unitEls.get(u.uid);
     if (!ue) {
-      ue = makeUnitEl(u.team, u.type, u.rank);
+      ue = makeUnitEl(u.team, u.type, u.rank, u.weapon);
       ue.dataset.uid = u.uid; ue.dataset.testid = 'battle-unit';
       layer.appendChild(ue); G.unitEls.set(u.uid, ue);
     }
@@ -949,17 +970,65 @@ function finishBattle(b) {
   if (!win) G.autoAdvance = false;   // auto-advance runs until the first defeat
   renderResult(G.lastResult);
   $('#overlay-result').classList.remove('hidden');
+  checkForUpdate();
   if (win && G.autoAdvance) {
     // count down on the result screen, then start the next stage with the same formation
     G.autoLeft = AUTO_ADVANCE_SEC;
     const tick = () => {
       if (!G.autoAdvance) return;
+      if (G.updateDialog) { G.autoTimer = setTimeout(tick, 300); return; }   // paused while the update dialog is open
       if (G.autoLeft <= 0) { autoNextStage(); return; }
       renderResult(G.lastResult);
       G.autoLeft--; G.autoTimer = setTimeout(tick, 1000);
     };
     tick();
   }
+}
+
+// ---------------- app update ----------------
+// After every battle the game asks the server for the latest version (version.json, never cached).
+// If it differs from the running one, a dialog offers to update: the browser cache is refreshed for every
+// file the page uses, the service worker is updated, and the page reloads (progress is already saved).
+let updateDismissed = null;   // "later" hides the dialog for that version until the next launch
+async function checkForUpdate() {
+  let latest;
+  try {
+    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+    latest = String((await res.json()).version || '');
+  } catch { return; }   // offline: nothing to do
+  if (!latest || latest === APP_VERSION || latest === updateDismissed) return;
+  if (!$('#modal').classList.contains('hidden')) return;   // don't cover another dialog
+  showUpdateDialog(latest);
+}
+function showUpdateDialog(latest) {
+  G.updateDialog = true;
+  openModal(() => {
+    const box = $('#modal-content'); box.innerHTML = ''; box.dataset.testid = 'update-dialog';
+    const h = el('h3'); h.textContent = t('update.title'); box.appendChild(h);
+    const p = el('p'); p.textContent = t('update.body'); box.appendChild(p);
+    const v = el('p', 'note'); v.textContent = t('update.version', { from: APP_VERSION, to: latest }); box.appendChild(v);
+    const row = el('div', 'update-buttons');
+    const now = el('button', 'btn primary', { 'data-testid': 'btn-update-now' }); now.textContent = t('update.now');
+    const later = el('button', 'btn', { 'data-testid': 'btn-update-later' }); later.textContent = t('update.later');
+    now.addEventListener('click', async () => { now.disabled = later.disabled = true; now.textContent = t('update.updating'); await applyUpdate(); });
+    later.addEventListener('click', () => { updateDismissed = latest; closeModal(); });
+    row.append(now, later); box.appendChild(row);
+  });
+  G.updateDialog = true;   // openModal ran the render; keep the flag set
+  $('#btn-modal-close').classList.add('hidden');
+}
+async function applyUpdate() {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    // refresh the HTTP cache for the page and everything it loaded
+    const urls = new Set([location.href.split('#')[0]]);
+    for (const e of performance.getEntriesByType('resource')) if (e.name.startsWith(location.origin)) urls.add(e.name.split('#')[0]);
+    await Promise.race([Promise.all([...urls].map((u) => fetch(u, { cache: 'reload' }).catch(() => {}))), wait(5000)]);
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (reg) await Promise.race([reg.update().catch(() => {}), wait(3000)]);
+  } catch { /* reload anyway */ }
+  location.reload();
 }
 
 // ---------------- auto-advance ("until defeat") ----------------
