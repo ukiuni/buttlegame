@@ -4,6 +4,12 @@ export const LANGS = { ja: '日本語', en: 'English', zh: '中文', ko: '한국
 
 export const STRINGS = {
   ja: {
+    'split.open': '分解',
+    'split.title': '{name} ★{rank} を分解',
+    'split.preview': '★{a} と ★{b} に分かれます',
+    'split.note': '新しい方は控えに入ります。装備と配置は元のキャラに残ります。',
+    'split.confirm': '分解する',
+    'split.done': '{name}を ★{a} と ★{b} に分解した',
     'item.iron_axe': 'アイアンアックス',
     'item.flame_blade': 'フレイムブレード',
     'item.short_bow': 'ショートボウ',
@@ -125,6 +131,12 @@ export const STRINGS = {
     'result.home': 'ホームへ',
   },
   en: {
+    'split.open': 'Split',
+    'split.title': 'Split {name} ★{rank}',
+    'split.preview': 'Becomes ★{a} and ★{b}',
+    'split.note': 'The new one goes to the bench. Equipment and position stay with the original.',
+    'split.confirm': 'Split',
+    'split.done': 'Split {name} into ★{a} and ★{b}',
     'item.iron_axe': 'Iron Axe',
     'item.flame_blade': 'Flame Blade',
     'item.short_bow': 'Short Bow',
@@ -246,6 +258,12 @@ export const STRINGS = {
     'result.home': 'Home',
   },
   zh: {
+    'split.open': '分解',
+    'split.title': '分解 {name} ★{rank}',
+    'split.preview': '分成 ★{a} 和 ★{b}',
+    'split.note': '新的角色进入待命。装备和站位保留在原角色上。',
+    'split.confirm': '分解',
+    'split.done': '已将{name}分解为 ★{a} 和 ★{b}',
     'item.iron_axe': '铁斧',
     'item.flame_blade': '火焰剑',
     'item.short_bow': '短弓',
@@ -367,6 +385,12 @@ export const STRINGS = {
     'result.home': '返回主页',
   },
   ko: {
+    'split.open': '분해',
+    'split.title': '{name} ★{rank} 분해',
+    'split.preview': '★{a}와 ★{b}로 나뉩니다',
+    'split.note': '새 캐릭터는 대기열로 갑니다. 장비와 배치는 원래 캐릭터에 남습니다.',
+    'split.confirm': '분해하기',
+    'split.done': '{name}을(를) ★{a}와 ★{b}로 분해했습니다',
     'item.iron_axe': '아이언 액스',
     'item.flame_blade': '플레임 블레이드',
     'item.short_bow': '숏 보우',

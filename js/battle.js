@@ -5,6 +5,10 @@ export const ATTACK_ANIM = 0.45;   // attack motion length (s)
 export const HIT_TIME = 0.22;      // when the hit lands within the attack motion
 export const DYING_TIME = 0.9;     // falling-down motion length before removal
 export const TIME_LIMIT = 90;
+// Bosses are drawn 4x bigger: their body has this radius (cells). Attacks reach it from the edge of the body,
+// enemies of the boss can't walk into it, and area attacks catch it when they touch the body.
+export const BOSS_R = 1.2;
+const bodyR = (u) => (u && u.boss ? BOSS_R : 0);
 
 let uidSeq = 1;
 
@@ -50,6 +54,8 @@ export class Battle {
   enemiesOf(u) { return this.units.filter((o) => o.team !== u.team && this.alive(o)); }
   alliesOf(u) { return this.units.filter((o) => o.team === u.team && o !== u && this.alive(o)); }
   dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  // distance between the edges of two bodies (= dist for normal-sized units)
+  gap(a, b) { return Math.max(0, this.dist(a, b) - bodyR(a) - bodyR(b)); }
 
   nearest(u, list) {
     let best = null, bd = Infinity;
@@ -146,7 +152,7 @@ export class Battle {
     const pct = this.magicPct(u);
     this.events.push({ type: 'magic', uid: u.uid, x: center.x, y: center.y, r: u.magic.radius });
     for (const o of this.enemiesOf(u)) {
-      if (o !== center && this.dist(o, center) > u.magic.radius) continue;
+      if (o !== center && this.dist(o, center) > u.magic.radius + bodyR(o)) continue;
       if (!this.alive(o)) continue;
       const w = this.wardOf(o);
       if (w) {   // inside a warder's barrier: the spell is nullified
@@ -271,12 +277,12 @@ export class Battle {
       if (!choice) { this.setState(u, 'idle'); continue; }
       const { target, action } = choice;
       u.targetUid = target.uid; u.action = action;
-      const d = this.dist(u, target);
+      const d = this.dist(u, target), reach = this.gap(u, target);   // bosses are reached at the edge of their body
       if (Math.abs(target.x - u.x) > 0.05) u.facing = target.x > u.x ? 1 : -1;
-      if (d > u.range) {
+      if (reach > u.range) {
         if (this.trace) this.trace.push({ t: this.time, kind: 'walk', uid: u.uid, dist: d, range: u.range });
         this.setState(u, 'walk');
-        const mv = Math.min(u.speed * dt, d - u.range + 0.01);
+        const mv = Math.min(u.speed * dt, reach - u.range + 0.01);
         u.x += ((target.x - u.x) / d) * mv;
         u.y += ((target.y - u.y) / d) * mv;
       } else if (u.cd <= 0 && u.charge && action === 'attack') {
@@ -307,7 +313,7 @@ export class Battle {
     u.chargeLeft -= mv;
     if (u.x !== nx || u.y !== ny) u.chargeLeft = 0; // hit the edge of the field
     for (const o of this.enemiesOf(u)) {
-      if (u.chargeHit.has(o.uid) || this.dist(u, o) > 0.55) continue;
+      if (u.chargeHit.has(o.uid) || this.dist(u, o) > 0.55 + bodyR(o)) continue;
       u.chargeHit.add(o.uid);
       this.applyDamage(u, o, this.atkOf(u) * u.charge.power);
     }
@@ -335,7 +341,7 @@ export class Battle {
     }
     if (u.slam) {
       this.events.push({ type: 'slam', uid: u.uid, x: tgt.x, y: tgt.y });
-      const hit = [tgt, ...this.enemiesOf(u).filter((o) => o !== tgt && this.dist(o, tgt) <= u.slam)];
+      const hit = [tgt, ...this.enemiesOf(u).filter((o) => o !== tgt && this.dist(o, tgt) <= u.slam + bodyR(o))];
       for (const o of hit) {
         if (o !== tgt) this.applyDamage(u, o, this.atkOf(u) * 0.6);
         if (u.stun > 0 && this.alive(o)) { o.stunUntil = this.time + u.stun; this.events.push({ type: 'stun', uid: o.uid }); }
@@ -348,14 +354,14 @@ export class Battle {
       for (const o of this.enemiesOf(u)) {
         if (o === tgt) continue;
         const px = o.x - u.x, py = o.y - u.y, along = px * dx + py * dy;
-        if (along > 0 && along <= d + u.pierce && Math.abs(px * dy - py * dx) <= 0.5) this.applyDamage(u, o, this.atkOf(u) * 0.7);
+        if (along > 0 && along <= d + u.pierce + bodyR(o) && Math.abs(px * dy - py * dx) <= 0.5 + bodyR(o)) this.applyDamage(u, o, this.atkOf(u) * 0.7);
       }
     }
   }
 
   separate() {
     const list = this.units.filter((u) => this.alive(u));
-    const minD = 0.62, bossD = 0.9;   // bosses are big: others keep further away from them
+    const minD = 0.62;
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
         const a = list[i], b = list[j];
@@ -363,11 +369,15 @@ export class Battle {
         if (a.fly !== b.fly || a.state === 'charge' || b.state === 'charge') continue;
         let dx = b.x - a.x, dy = b.y - a.y;
         let d = Math.hypot(dx, dy);
-        const need = a.boss || b.boss ? bossD : minD;
+        // a boss's own side may stand in front of / behind it; its foes are kept out of its body
+        if ((a.boss || b.boss) && a.team === b.team) continue;
+        const need = a.boss || b.boss ? minD / 2 + BOSS_R : minD;
         if (d >= need) continue;
         if (d < 1e-4) { dx = (a.uid % 2 ? 1 : -1) * 0.01; dy = 0; d = 0.01; }
         const push = (need - d) / 2;
-        const ax = a.state === 'attack' ? 0.3 : 1, bx = b.state === 'attack' ? 0.3 : 1;
+        // the boss doesn't get shoved around: the smaller unit takes the whole push
+        let ax = a.state === 'attack' ? 0.3 : 1, bx = b.state === 'attack' ? 0.3 : 1;
+        if (a.boss) { ax = 0; bx = 2; } else if (b.boss) { ax = 2; bx = 0; }
         a.x -= (dx / d) * push * ax; a.y -= (dy / d) * push * ax;
         b.x += (dx / d) * push * bx; b.y += (dy / d) * push * bx;
       }

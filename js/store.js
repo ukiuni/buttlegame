@@ -60,6 +60,18 @@ export class Store {
     return c;
   }
 
+  // Split a merged character (★2 or more): `k` ranks become a new character of the same class on the bench,
+  // the original keeps the rest (and its equipment and place). ★8 split 3 -> ★5 + ★3.
+  splitChar(charId, k) {
+    const c = this.char(charId);
+    if (!c || !(c.rank >= 2) || !Number.isInteger(k) || k < 1 || k > c.rank - 1) return null;
+    c.rank -= k;
+    const n = { id: this.data.nextId++, type: c.type, rank: k, equip: {} };
+    this.data.roster.push(n);
+    this.save();
+    return { kept: c, split: n };
+  }
+
   // Recruit up to `n` units (stops when coins run out). Returns the number recruited.
   recruitMany(type, n) {
     let k = 0;

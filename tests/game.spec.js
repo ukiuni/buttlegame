@@ -959,7 +959,7 @@ test('結界インプ：ステージ25から登場し、敵側の結界（ピン
 });
 
 // =============== Bosses ===============
-test('ボス：10ステージごとに大きなボスが登場し、名前とHPバーをフィールドの上に表示、開始時にバナーが出る', async ({ page }) => {
+test('ボス：10ステージごとに4倍以上の巨大なボスが登場し、名前とHPバーをフィールドの上に表示、開始時にバナーが出る', async ({ page }) => {
   await gotoHome(page);
   await page.evaluate(() => __game.setStage(9));
   await page.click('#btn-home-start');
@@ -980,7 +980,7 @@ test('ボス：10ステージごとに大きなボスが登場し、名前とHP�
     const w = (e) => e.querySelector('.sprite').getBoundingClientRect().width;
     return { boss: w(document.querySelector('.unit.preview.boss')), mob: w(document.querySelector('.unit.preview:not(.boss)')) };
   });
-  expect(size.boss).toBeGreaterThan(size.mob * 1.7);
+  expect(size.boss).toBeGreaterThanOrEqual(size.mob * 4);   // at least 4x the size of a normal monster
   // tapping it shows its name and abilities
   const b = await boss.boundingBox();
   await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
@@ -1173,4 +1173,27 @@ test('装備：武器を持たせるとホーム画面・配置画面・戦闘�
   await expect(page.locator('.unit.placed .sprite[data-weapon="flame_blade"]')).toHaveCount(1);
   await page.click('#btn-fight');
   await expect(page.locator('#units .unit.team-ally .sprite[data-weapon="flame_blade"]')).toHaveCount(1);
+});
+
+test('分解：合成した仲間を2体に分解でき、元に戻すこともできる（★1は分解できない）', async ({ page }) => {
+  await gotoHome(page);
+  await page.evaluate(() => { const s = __game.store; s.data.roster.find((c) => c.type === 'mage').rank = 6; s.save(); __game.refresh(); });
+  await page.locator('.roster-card[data-type="archer"]').click();
+  await expect(page.getByTestId('btn-split')).toBeDisabled();          // ★1
+  await page.click('#btn-modal-close');
+  await page.locator('.roster-card[data-type="mage"]').click();
+  await page.getByTestId('btn-split').click();
+  await expect(page.getByTestId('split-preview')).toHaveText(JA['split.preview'].replace('{a}', '3').replace('{b}', '3'));
+  await page.locator('[data-split="minus"]').click();
+  await page.locator('[data-split="minus"]').click();
+  await expect(page.getByTestId('split-preview')).toHaveText(JA['split.preview'].replace('{a}', '5').replace('{b}', '1'));
+  await expect(page.locator('[data-split="minus"]')).toBeDisabled();
+  await page.getByTestId('split-confirm').click();
+  await expect(page.locator('.roster-card[data-type="mage"]')).toHaveCount(2);
+  const ranks = await page.locator('.roster-card[data-type="mage"]').evaluateAll((cs) => cs.map((c) => +c.dataset.rank).sort());
+  expect(ranks).toEqual([1, 5]);
+  // undo restores the merged one
+  await page.locator('#btn-undo').click();
+  await expect(page.locator('.roster-card[data-type="mage"]')).toHaveCount(1);
+  await expect(page.locator('.roster-card[data-type="mage"]')).toHaveAttribute('data-rank', '6');
 });

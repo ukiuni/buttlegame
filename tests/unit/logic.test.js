@@ -647,3 +647,20 @@ test('magic defence accessories cut magic damage taken; old saves drop weapons a
   assert.equal(s.data.roster[0].equip.armor, 'leather_armor');
   assert.equal(s.data.inventory.mythril_sword, 1);
 });
+
+test('split: a merged character can be split into two (ranks add back up); ★1 cannot be split', () => {
+  const s = new Store(mem());
+  const sw = s.data.roster.find((c) => c.type === 'sword');
+  sw.rank = 8; s.data.inventory = { bronze_sword: 1 }; s.equip(sw.id, 'bronze_sword');
+  const n0 = s.data.roster.length, cell = s.cellOf(sw.id);
+  const r = s.splitChar(sw.id, 3);
+  assert.equal(r.kept.rank, 5); assert.equal(r.split.rank, 3);
+  assert.equal(r.split.type, 'sword'); assert.deepEqual(r.split.equip, {});
+  assert.equal(sw.equip.weapon, 'bronze_sword', 'equipment stays'); assert.equal(s.cellOf(sw.id), cell, 'position stays');
+  assert.equal(s.cellOf(r.split.id), null, 'new one is on the bench');
+  assert.equal(s.data.roster.length, n0 + 1);
+  assert.equal(s.splitChar(sw.id, 5), null, 'cannot split off everything');
+  assert.equal(s.splitChar(sw.id, 0), null);
+  const one = s.data.roster.find((c) => c.rank === 1);
+  assert.equal(s.splitChar(one.id, 1), null, '★1 cannot be split');
+});

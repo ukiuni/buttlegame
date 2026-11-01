@@ -363,8 +363,8 @@ export function enemyWave(stage) {
   const out = [];
   for (const u of list) {
     if (u.boss) {
-      // the boss stands in the centre: melee bosses on the front line, the others in the middle row
-      const row = MELEE_FRONT.has(baseType(u.type)) || baseType(u.type) === 'skeleton' ? g.zoneRows - 1 : Math.floor((g.zoneRows - 1) / 2);
+      // the (4x sized) boss stands in the very centre of the enemy zone; its sprite covers most of the zone
+      const row = Math.floor((g.zoneRows - 1) / 2);
       const cell = row * g.cols + colOrder[0];
       free.delete(cell); out.push({ type: u.type, rank: u.rank, cell, boss: true });
     } else (MELEE_FRONT.has(u.type) ? front : back).push(u);

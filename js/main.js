@@ -135,6 +135,44 @@ function openBulkMerge(targetId) {
   });
 }
 
+// Split a merged character into two: choose how many ranks go to the new one.
+function openSplit(charId) {
+  let k = null;
+  openModal(() => {
+    const c = store.char(charId); const box = $('#modal-content'); box.innerHTML = '';
+    if (!c || c.rank < 2) { closeModal(); return; }
+    box.dataset.testid = 'split';
+    const max = c.rank - 1;
+    if (k == null) k = Math.floor(c.rank / 2);
+    k = Math.max(1, Math.min(k, max));
+    const h = el('h3'); h.textContent = t('split.title', { name: charName(c.type), rank: c.rank }); box.appendChild(h);
+    const head = el('div', 'bulk-head'); head.appendChild(spriteEl('ally', c.type, 0, c.equip.weapon));
+    const prv = el('div', 'bulk-preview', { 'data-testid': 'split-preview' });
+    const preview = () => { prv.textContent = t('split.preview', { a: c.rank - k, b: k }); };
+    preview(); head.appendChild(prv); box.appendChild(head);
+    const st = el('div', 'stepper');
+    const minus = el('button', 'btn small', { 'data-split': 'minus' }); minus.textContent = '−';
+    const num = el('span', 'num', { 'data-testid': 'split-count' }); num.textContent = k;
+    const plus = el('button', 'btn small', { 'data-split': 'plus' }); plus.textContent = '+';
+    const range = el('input', '', { type: 'range', min: 1, max, value: k, 'data-split': 'range' });
+    minus.disabled = k <= 1; plus.disabled = k >= max;
+    minus.addEventListener('click', () => { k--; G.modalRender(); });
+    plus.addEventListener('click', () => { k++; G.modalRender(); });
+    range.addEventListener('input', () => { k = +range.value; num.textContent = k; preview(); });
+    range.addEventListener('change', () => G.modalRender());
+    st.append(minus, num, plus, range); box.appendChild(st);
+    const note = el('p', 'note'); note.textContent = t('split.note'); box.appendChild(note);
+    const ok = el('button', 'btn primary', { 'data-testid': 'split-confirm' }); ok.textContent = t('split.confirm');
+    ok.addEventListener('click', () => {
+      const snap = store.snapshot();
+      const r = store.splitChar(charId, k);
+      closeModal();
+      if (r) showUndo(t('split.done', { name: charName(c.type), a: r.kept.rank, b: r.split.rank }), snap);
+    });
+    box.appendChild(ok);
+  });
+}
+
 // ---------------- auto arrange ----------------
 const rowName = (cell) => {
   const r = Math.floor(cell / G.grid.cols), last = G.grid.zoneRows - 1;
@@ -340,7 +378,11 @@ function openCharDetail(id) {
     bulk.textContent = t('bulk.open', { n: cand.list.length });
     bulk.disabled = cand.max === 0;
     bulk.addEventListener('click', () => openBulkMerge(c.id));
-    acts.append(lock, bulk); box.appendChild(acts);
+    const split = el('button', 'btn small', { 'data-testid': 'btn-split' });
+    split.textContent = t('split.open');
+    split.disabled = c.rank < 2;   // only merged characters (★2+) can be split
+    split.addEventListener('click', () => openSplit(c.id));
+    acts.append(lock, bulk, split); box.appendChild(acts);
     const eh = el('h3'); eh.textContent = t('equip.title'); box.appendChild(eh);
     for (const slot of SLOTS) {
       const row = el('div', 'slot-row');
@@ -493,7 +535,8 @@ function makeUnitEl(team, type, rank, weapon = null) {
 function positionEl(u, x, y) {
   const size = unitSize();
   u.style.transform = `translate(${Math.round(x * G.cs - size / 2)}px, ${Math.round((y + OY) * G.cs - size * 0.62)}px)`;
-  u.style.zIndex = Math.round(y * 10);
+  // a boss is drawn 4x bigger, centred on its position and behind everyone else
+  u.style.zIndex = u.classList.contains('boss') ? 0 : Math.round(y * 10);
 }
 
 // ---------------- prep (formation) ----------------
